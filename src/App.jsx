@@ -324,7 +324,7 @@ TOOLS — réponds TOOL: {json} sur une seule ligne :
 
 Réponds en français. Utilise les tools pour toute action ERP. Montants en FCFA.`;
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  const res = await fetch("/api/ai", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
