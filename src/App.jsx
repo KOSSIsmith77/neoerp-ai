@@ -36,6 +36,27 @@ const fmtShort = (n) => { n = Number(n || 0); if (n >= 1e6) return (n / 1e6).toF
 const fmt = (n) => Number(n || 0).toLocaleString("fr-FR") + " FCFA";
 const genRef = () => `FAC-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
 
+/* ─── PAYMENT ─── */
+async function initiatePayment(plan, email, company) {
+  const res = await fetch("/api/payment", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      plan: plan.name,
+      amount: plan.price,
+      email: email,
+      firstname: company || "Client",
+      lastname: "NeoERP",
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || "Erreur lors de l'initiation du paiement");
+  }
+  const data = await res.json();
+  return data.payment_url;
+}
+
 /* ─── AUTH ─── */
 const auth = {
   async signUp(email, password) {
@@ -484,13 +505,24 @@ function Dashboard({ token, userId, onNavigate, refreshKey, plan, company }) {
 
       {/* Relances rapides */}
       {stats.impaye > 0 && (
-        <button onClick={() => onNavigate("reminders")} style={{ width: "100%", background: T.redDim, border: `1px solid ${T.red}30`, borderRadius: 10, padding: "11px 14px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer", textAlign: "left" }}>
+        <button onClick={() => onNavigate("reminders")} style={{ width: "100%", background: T.redDim, border: `1px solid ${T.red}30`, borderRadius: 10, padding: "11px 14px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer", textAlign: "left", marginBottom: 12 }}>
           <span style={{ color: T.red, fontSize: 16 }}>⚡</span>
           <div>
             <div style={{ color: T.red, fontWeight: 700, fontSize: 12 }}>Relances en attente</div>
             <div style={{ color: T.sub, fontSize: 10 }}>{fmtShort(stats.impaye)} FCFA impayés · Cliquez pour relancer</div>
           </div>
           <div style={{ marginLeft: "auto", color: T.red }}>→</div>
+        </button>
+      )}
+
+      {plan === "starter" && (
+        <button onClick={() => onNavigate("upgrade")} style={{ width: "100%", background: `linear-gradient(135deg, ${T.accentDim}, ${T.s2})`, border: `1px solid ${T.accentBorder}`, borderRadius: 10, padding: "11px 14px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer", textAlign: "left" }}>
+          <span style={{ color: T.accent, fontSize: 16 }}>★</span>
+          <div>
+            <div style={{ color: T.accent, fontWeight: 700, fontSize: 12 }}>Passer au plan Business</div>
+            <div style={{ color: T.sub, fontSize: 10 }}>Agent IA inclus + relances auto + support prioritaire</div>
+          </div>
+          <div style={{ marginLeft: "auto", color: T.accent }}>→</div>
         </button>
       )}
     </div>
@@ -696,8 +728,50 @@ function Toast({ msg, type, onClose }) {
   return <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: type === "success" ? T.accent : T.red, color: T.bg, borderRadius: 10, padding: "10px 20px", fontWeight: 700, fontSize: 13, zIndex: 999, boxShadow: "0 8px 30px rgba(0,0,0,0.4)", whiteSpace: "nowrap" }}>{msg}</div>;
 }
 
+/* ─── PAYMENT MODAL ─── */
+function PaymentModal({ plan, onClose, onSuccess }) {
+  const [email, setEmail] = useState("");
+  const [company, setCompany] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async () => {
+    if (!email || !email.includes("@")) return setError("Email valide requis");
+    setLoading(true); setError("");
+    try {
+      const url = await initiatePayment(plan, email, company);
+      if (url) window.location.href = url;
+      else throw new Error("Lien de paiement indisponible");
+    } catch (e) { setError(e.message); setLoading(false); }
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
+      <div style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 14, padding: 22, width: "min(380px, 100%)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div style={{ color: T.text, fontWeight: 800, fontSize: 16 }}>Abonnement {plan.name}</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: T.sub, fontSize: 18, cursor: "pointer" }}>×</button>
+        </div>
+        <div style={{ background: T.accentDim, border: `1px solid ${T.accentBorder}`, borderRadius: 9, padding: "10px 13px", marginBottom: 16 }}>
+          <div style={{ color: T.accent, fontWeight: 800, fontSize: 18 }}>{plan.price.toLocaleString("fr-FR")} FCFA<span style={{ fontSize: 11, fontWeight: 400, color: T.sub }}>/mois</span></div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 9, marginBottom: 14 }}>
+          <input value={company} onChange={e => setCompany(e.target.value)} placeholder="Nom de votre entreprise" style={{ background: T.s3, border: `1px solid ${T.border}`, borderRadius: 8, padding: "10px 13px", color: T.text, fontSize: 13, outline: "none" }} />
+          <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" type="email" onKeyDown={e => e.key === "Enter" && submit()} style={{ background: T.s3, border: `1px solid ${T.border}`, borderRadius: 8, padding: "10px 13px", color: T.text, fontSize: 13, outline: "none" }} />
+        </div>
+        {error && <div style={{ marginBottom: 12, padding: "8px 11px", borderRadius: 7, background: T.redDim, color: T.red, fontSize: 12 }}>{error}</div>}
+        <button onClick={submit} disabled={loading} style={{ width: "100%", background: loading ? T.s3 : T.accent, border: "none", borderRadius: 9, padding: "12px", color: loading ? T.sub : T.bg, fontWeight: 800, fontSize: 14, cursor: loading ? "default" : "pointer" }}>
+          {loading ? "Redirection…" : "Payer avec Mobile Money / Carte →"}
+        </button>
+        <div style={{ color: T.dim, fontSize: 10, textAlign: "center", marginTop: 10 }}>🔒 Paiement sécurisé via FedaPay</div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── LANDING PAGE ─── */
 function LandingPage({ onGetStarted }) {
+  const [payingPlan, setPayingPlan] = useState(null);
   const features = [
     { icon: "◧", title: "Facturation PDF", desc: "Factures professionnelles avec TVA 18% en un clic." },
     { icon: "◈", title: "Agent IA autonome", desc: "Dites à l'IA ce que vous voulez. Elle exécute." },
@@ -747,7 +821,7 @@ function LandingPage({ onGetStarted }) {
                 <div style={{ textAlign: "right" }}><div style={{ color: T.text, fontWeight: 900, fontSize: 18 }}>{plan.price.toLocaleString("fr-FR")} <span style={{ fontSize: 10, color: T.sub, fontWeight: 400 }}>FCFA/mois</span></div></div>
               </div>
               <div style={{ marginBottom: 12 }}>{plan.features.map((f, i) => <div key={i} style={{ display: "flex", gap: 6, padding: "3px 0", fontSize: 11, color: T.sub }}><span style={{ color: plan.color }}>✓</span> {f}</div>)}</div>
-              <button onClick={() => onGetStarted("register")} style={{ width: "100%", background: plan.popular ? T.accent : T.s3, border: `1px solid ${plan.popular ? T.accent : T.border}`, borderRadius: 8, padding: "10px", color: plan.popular ? T.bg : T.text, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{plan.cta}{plan.trial ? " — 14 jours gratuits" : ""}</button>
+              <button onClick={() => setPayingPlan(plan)} style={{ width: "100%", background: plan.popular ? T.accent : T.s3, border: `1px solid ${plan.popular ? T.accent : T.border}`, borderRadius: 8, padding: "10px", color: plan.popular ? T.bg : T.text, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{plan.cta}{plan.trial ? " — 14 jours gratuits" : ""}</button>
             </div>
           ))}
         </div>
@@ -755,6 +829,7 @@ function LandingPage({ onGetStarted }) {
       <div style={{ borderTop: `1px solid ${T.border}`, padding: "16px 20px", textAlign: "center" }}>
         <div style={{ color: T.dim, fontSize: 11 }}>© 2026 NeoERP AI — NeoTech Solutions — Lomé, Togo · SYSCOHADA · UEMOA</div>
       </div>
+      {payingPlan && <PaymentModal plan={payingPlan} onClose={() => setPayingPlan(null)} onSuccess={() => setPayingPlan(null)} />}
     </div>
   );
 }
@@ -796,6 +871,30 @@ function AuthScreen({ onAuth, defaultMode = "login" }) {
   );
 }
 
+function UpgradeModule({ email, company }) {
+  const [payingPlan, setPayingPlan] = useState(null);
+  return (
+    <div style={{ padding: 18, height: "100%", overflowY: "auto" }}>
+      <div style={{ color: T.sub, fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", marginBottom: 4 }}>★ ABONNEMENT</div>
+      <div style={{ color: T.text, fontSize: 17, fontWeight: 800, marginBottom: 16 }}>Choisir un plan</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {PLANS.map((plan) => (
+          <div key={plan.id} style={{ background: plan.popular ? T.accentDim : T.s2, border: `2px solid ${plan.popular ? T.accent : T.border}`, borderRadius: 12, padding: "16px", position: "relative" }}>
+            {plan.popular && <div style={{ position: "absolute", top: -10, right: 14, background: T.accent, color: T.bg, borderRadius: 20, padding: "2px 10px", fontSize: 9, fontWeight: 800 }}>POPULAIRE</div>}
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+              <div><div style={{ color: plan.color, fontWeight: 800, fontSize: 15 }}>{plan.name}</div><div style={{ color: T.sub, fontSize: 11 }}>{plan.desc}</div></div>
+              <div style={{ textAlign: "right" }}><div style={{ color: T.text, fontWeight: 900, fontSize: 18 }}>{plan.price.toLocaleString("fr-FR")} <span style={{ fontSize: 10, color: T.sub, fontWeight: 400 }}>FCFA/mois</span></div></div>
+            </div>
+            <div style={{ marginBottom: 12 }}>{plan.features.map((f, i) => <div key={i} style={{ display: "flex", gap: 6, padding: "3px 0", fontSize: 11, color: T.sub }}><span style={{ color: plan.color }}>✓</span> {f}</div>)}</div>
+            <button onClick={() => setPayingPlan(plan)} style={{ width: "100%", background: plan.popular ? T.accent : T.s3, border: `1px solid ${plan.popular ? T.accent : T.border}`, borderRadius: 8, padding: "10px", color: plan.popular ? T.bg : T.text, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>S'abonner</button>
+          </div>
+        ))}
+      </div>
+      {payingPlan && <PaymentModal plan={payingPlan} onClose={() => setPayingPlan(null)} onSuccess={() => setPayingPlan(null)} />}
+    </div>
+  );
+}
+
 /* ─── NAV ─── */
 const NAV = [
   { id: "dashboard", icon: "⬡", label: "Tableau de bord" },
@@ -807,7 +906,7 @@ const NAV = [
 ];
 
 /* ─── ROOT ─── */
-export default function NeoERPV9() {
+export default function NeoERPV10() {
   const [screen, setScreen] = useState("landing");
   const [authMode, setAuthMode] = useState("login");
   const [session, setSession] = useState(null);
@@ -859,6 +958,7 @@ export default function NeoERPV9() {
       case "factures": return <FacturesModule {...props} />;
       case "tresorerie": return <TresorerieModule {...props} />;
       case "reminders": return <RemindersModule factures={factures} token={session.token} userId={session.user?.id} toast={showToast} />;
+      case "upgrade": return <UpgradeModule email={session.user?.email} company={session.company} />;
       default: return <Dashboard {...props} onNavigate={setView} plan={session.plan} company={session.company} />;
     }
   };
@@ -871,7 +971,7 @@ export default function NeoERPV9() {
       <div style={{ width: collapsed ? 50 : 210, flexShrink: 0, background: T.s1, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column", transition: "width 0.22s", overflow: "hidden" }}>
         <div style={{ padding: "13px 11px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ width: 27, height: 27, borderRadius: 8, background: `linear-gradient(135deg, ${T.accent}, #009970)`, display: "flex", alignItems: "center", justifyContent: "center", color: T.bg, fontWeight: 900, fontSize: 12, flexShrink: 0 }}>N</div>
-          {!collapsed && (<><div><div style={{ color: T.text, fontWeight: 800, fontSize: 12 }}>NeoERP AI</div><div style={{ color: T.accent, fontSize: 9, fontWeight: 600 }}>● V9 · Charts · Relances</div></div><button onClick={() => setCollapsed(true)} style={{ marginLeft: "auto", background: "none", border: "none", color: T.dim, cursor: "pointer" }}>⇤</button></>)}
+          {!collapsed && (<><div><div style={{ color: T.text, fontWeight: 800, fontSize: 12 }}>NeoERP AI</div><div style={{ color: T.accent, fontSize: 9, fontWeight: 600 }}>● V10 · Paiements FedaPay</div></div><button onClick={() => setCollapsed(true)} style={{ marginLeft: "auto", background: "none", border: "none", color: T.dim, cursor: "pointer" }}>⇤</button></>)}
           {collapsed && <button onClick={() => setCollapsed(false)} style={{ background: "none", border: "none", color: T.dim, cursor: "pointer" }}>⇥</button>}
         </div>
         <nav style={{ flex: 1, padding: "7px 5px" }}>
@@ -896,7 +996,7 @@ export default function NeoERPV9() {
           <span style={{ color: T.sub, fontSize: 11, flex: 1 }}>{NAV.find(n => n.id === view)?.label}</span>
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <div style={{ width: 5, height: 5, borderRadius: "50%", background: T.accent, boxShadow: `0 0 5px ${T.accent}` }} />
-            <span style={{ color: T.sub, fontSize: 10 }}>V9 · Charts · Relances</span>
+            <span style={{ color: T.sub, fontSize: 10 }}>V10 · Paiements FedaPay</span>
           </div>
         </div>
         <div style={{ flex: 1, overflow: "hidden" }}>{renderView()}</div>
