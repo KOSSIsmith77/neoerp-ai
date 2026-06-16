@@ -1005,5 +1005,3 @@ export default function NeoERPV10() {
     </div>
   );
 }
-
-
