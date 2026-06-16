@@ -40,8 +40,10 @@ export default async function handler(req) {
       });
     }
 
+    const transactionId = txData["v1/transaction"].id;
+
     const tokenResponse = await fetch(
-      `https://sandbox-api.fedapay.com/v1/transactions/${txData.v1/transaction.id}/token`,
+      `https://sandbox-api.fedapay.com/v1/transactions/${transactionId}/token`,
       {
         method: "POST",
         headers: {
@@ -53,7 +55,7 @@ export default async function handler(req) {
 
     const tokenData = await tokenResponse.json();
 
-    return new Response(JSON.stringify({ payment_url: tokenData.url, transaction_id: txData["v1/transaction"]?.id }), {
+    return new Response(JSON.stringify({ payment_url: tokenData.url, transaction_id: transactionId }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
