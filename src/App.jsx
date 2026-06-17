@@ -5,13 +5,13 @@ const SUPABASE_URL = "https://yctdyzcusvyumrfbqgyx.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InljdGR5emN1c3Z5dW1yZmJxZ3l4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0ODk5NDEsImV4cCI6MjA5NjA2NTk0MX0.ShrXFKzMX4RDym-E1J1CZPuxMstBqfZZssvqF29Zrgw";
 const SESSION_KEY = "neoerp_session";
 
-const COMPANY = {
-  name: "NeoTech Solutions",
-  address: "Lomé, Togo",
-  phone: "+228 XX XX XX XX",
-  email: "contact@neotech-solutions.tg",
-  rccm: "RC/LFM/2024/B/XXXXX",
-  tva: "TG20240001",
+const DEFAULT_COMPANY = {
+  nom: "Mon Entreprise",
+  adresse: "Lomé, Togo",
+  telephone: "",
+  email: "",
+  rccm: "",
+  tva: "",
   regime: "Réel Simplifié — SYSCOHADA",
 };
 
@@ -106,6 +106,28 @@ const db = {
   },
 };
 
+const companyDb = {
+  async get(userId, token) {
+    const data = await db.query("company_settings", { select: "*", filter: `user_id=eq.${userId}` }, token);
+    const list = Array.isArray(data) ? data : [];
+    return list[0] || null;
+  },
+  async upsert(userId, fields, token) {
+    const existing = await companyDb.get(userId, token);
+    if (existing) {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/company_settings?user_id=eq.${userId}`, {
+        method: "PATCH",
+        headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=representation" },
+        body: JSON.stringify(fields),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || "Erreur mise à jour entreprise"); }
+      return res.json();
+    } else {
+      return db.insert("company_settings", { ...fields, user_id: userId }, token);
+    }
+  },
+};
+
 const validate = {
   facture({ client_nom, montant_ht }) {
     if (!client_nom || client_nom.trim().length < 2) return "Nom du client invalide";
@@ -125,7 +147,8 @@ async function createEcritures(ref, clientNom, ht, tva, ttc, userId, token) {
 }
 
 /* ─── PDF ─── */
-function generatePDF(facture) {
+function generatePDF(facture, company) {
+  const co = company || DEFAULT_COMPANY;
   const ht = facture.montant_ht || 0, tva = facture.tva_montant || Math.round(ht * 0.18), ttc = facture.montant_ttc || ht + tva;
   const date = new Date(facture.created_at || Date.now()).toLocaleDateString("fr-FR");
   const echeance = facture.date_echeance ? new Date(facture.date_echeance).toLocaleDateString("fr-FR") : "30 jours";
@@ -145,9 +168,9 @@ tbody td{padding:12px 14px;font-size:12px}.totals{display:flex;justify-content:f
 .footer{border-top:1px solid #f0f0f0;padding-top:16px;font-size:10px;color:#999;text-align:center;line-height:1.6}
 .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;background:${facture.statut === "payée" ? "#e8f9f2" : "#fff8e1"};color:${facture.statut === "payée" ? "#00C48C" : "#F5A623"}}
 </style></head><body>
-<div class="header"><div><div class="logo">${COMPANY.name}</div><div class="co">${COMPANY.address}<br/>Tél : ${COMPANY.phone}<br/>Email : ${COMPANY.email}<br/>RCCM : ${COMPANY.rccm}<br/>N° TVA : ${COMPANY.tva}</div></div>
+<div class="header"><div><div class="logo">${co.nom}</div><div class="co">${co.adresse}<br/>${co.telephone ? `Tél : ${co.telephone}<br/>` : ""}${co.email ? `Email : ${co.email}<br/>` : ""}${co.rccm ? `RCCM : ${co.rccm}<br/>` : ""}${co.tva ? `N° TVA : ${co.tva}` : ""}</div></div>
 <div class="inv-title"><h1>FACTURE</h1><div class="inv-ref">${facture.reference}</div><div class="inv-date">Date : ${date}</div><div class="inv-date">Échéance : ${echeance}</div><div style="margin-top:8px"><span class="badge">${(facture.statut || "").toUpperCase()}</span></div></div></div>
-<div class="parties"><div class="party"><div class="party-label">Émetteur</div><div class="party-name">${COMPANY.name}</div><div class="party-detail">${COMPANY.address}<br/>${COMPANY.email}<br/>${COMPANY.regime}</div></div>
+<div class="parties"><div class="party"><div class="party-label">Émetteur</div><div class="party-name">${co.nom}</div><div class="party-detail">${co.adresse}<br/>${co.email || ""}<br/>${co.regime}</div></div>
 <div class="party" style="text-align:right"><div class="party-label">Client</div><div class="party-name">${facture.client_nom}</div><div class="party-detail">Lomé, Togo</div></div></div>
 <table><thead><tr><th>Description</th><th style="text-align:right">Qté</th><th style="text-align:right">Prix HT</th><th style="text-align:right">Montant HT</th></tr></thead>
 <tbody><tr><td>${facture.description || "Prestation de services"}</td><td style="text-align:right">1</td><td style="text-align:right">${ht.toLocaleString("fr-FR")} FCFA</td><td style="text-align:right">${ht.toLocaleString("fr-FR")} FCFA</td></tr></tbody></table>
@@ -156,7 +179,7 @@ tbody td{padding:12px 14px;font-size:12px}.totals{display:flex;justify-content:f
 <div style="background:#f8f9ff;border:1px solid #e8e9f0;border-radius:8px;padding:16px;margin-bottom:24px">
 <div style="font-size:11px;font-weight:700;color:#999;letter-spacing:0.15em;margin-bottom:8px">MODALITÉS DE PAIEMENT</div>
 <div style="font-size:12px;color:#444;line-height:1.6">Règlement par virement, Mobile Money ou chèque.<br/>Échéance : ${echeance} — Pénalités : 1,5%/mois.<br/>Référence : <strong>${facture.reference}</strong></div></div>
-<div class="footer">${COMPANY.name} — ${COMPANY.address} — RCCM : ${COMPANY.rccm} — N° TVA : ${COMPANY.tva}<br/>Généré par NeoERP AI — neoerp-ai.vercel.app</div>
+<div class="footer">${co.nom} — ${co.adresse}${co.rccm ? ` — RCCM : ${co.rccm}` : ""}${co.tva ? ` — N° TVA : ${co.tva}` : ""}<br/>Généré par NeoERP AI — neoerp-ai.vercel.app</div>
 </body></html>`;
   const blob = new Blob([html], { type: "text/html" });
   const url = URL.createObjectURL(blob);
@@ -641,7 +664,7 @@ function AIAgent({ token, userId, onRefresh }) {
   );
 }
 
-function FacturesModule({ token, userId, toast, refreshKey }) {
+function FacturesModule({ token, userId, toast, refreshKey, company }) {
   const [factures, setFactures] = useState([]); const [loading, setLoading] = useState(true); const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ client_nom: "", montant_ht: "", description: "", date_echeance: "" });
   const load = async () => { setLoading(true); try { const d = await db.query("factures", { select: "*", order: "created_at.desc" }, token); setFactures(Array.isArray(d) ? d : []); } catch (e) { toast(e.message, "error"); } setLoading(false); };
@@ -665,7 +688,7 @@ function FacturesModule({ token, userId, toast, refreshKey }) {
       </div>
       {impaye > 0 && <div style={{ background: T.goldDim, border: `1px solid ${T.gold}30`, borderRadius: 8, padding: "7px 11px", marginBottom: 11, fontSize: 11, color: T.gold }}>⚠ Impayés : <strong>{impaye.toLocaleString("fr-FR")} FCFA</strong></div>}
       {showForm && (<div style={{ background: T.s2, border: `1px solid ${T.accentBorder}`, borderRadius: 11, padding: 13, marginBottom: 13 }}><div style={{ background: T.accentDim, borderRadius: 7, padding: "5px 10px", marginBottom: 8, fontSize: 10, color: T.accent }}>✓ TVA 18% · SYSCOHADA 411/706/443 · PDF</div><div style={{ display: "flex", flexDirection: "column", gap: 7 }}><input value={form.client_nom} onChange={e => setForm(p => ({ ...p, client_nom: e.target.value }))} placeholder="Nom du client *" style={{ background: T.s3, border: `1px solid ${T.border}`, borderRadius: 7, padding: "8px 11px", color: T.text, fontSize: 12, outline: "none" }} /><input value={form.montant_ht} onChange={e => setForm(p => ({ ...p, montant_ht: e.target.value }))} placeholder="Montant HT en FCFA *" type="number" style={{ background: T.s3, border: `1px solid ${T.border}`, borderRadius: 7, padding: "8px 11px", color: T.text, fontSize: 12, outline: "none" }} />{form.montant_ht > 0 && <div style={{ background: T.accentDim, borderRadius: 7, padding: "5px 10px", fontSize: 11, color: T.accent }}>TTC : {Math.round(Number(form.montant_ht) * 1.18).toLocaleString("fr-FR")} FCFA</div>}<input value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Description" style={{ background: T.s3, border: `1px solid ${T.border}`, borderRadius: 7, padding: "8px 11px", color: T.text, fontSize: 12, outline: "none" }} /><input value={form.date_echeance} onChange={e => setForm(p => ({ ...p, date_echeance: e.target.value }))} type="date" style={{ background: T.s3, border: `1px solid ${T.border}`, borderRadius: 7, padding: "8px 11px", color: T.text, fontSize: 12, outline: "none" }} /></div><div style={{ display: "flex", gap: 7, marginTop: 10 }}><button onClick={save} style={{ background: T.accent, border: "none", borderRadius: 7, padding: "8px 15px", color: T.bg, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Enregistrer</button><button onClick={() => setShowForm(false)} style={{ background: T.s3, border: `1px solid ${T.border}`, borderRadius: 7, padding: "8px 11px", color: T.sub, fontSize: 12, cursor: "pointer" }}>Annuler</button></div></div>)}
-      {loading ? <div style={{ textAlign: "center", padding: 40, color: T.sub, fontSize: 12 }}>Chargement…</div> : factures.length === 0 ? <div style={{ textAlign: "center", padding: 40, color: T.sub, fontSize: 13 }}>Aucune facture.</div> : <div style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 11, overflow: "hidden" }}>{factures.map((f, i) => (<div key={f.id} style={{ padding: "10px 13px", borderBottom: i < factures.length - 1 ? `1px solid ${T.border}` : "none" }}><div style={{ display: "flex", alignItems: "center", gap: 8 }}><div style={{ color: T.dim, fontSize: 9, fontFamily: "monospace", minWidth: 90 }}>{f.reference}</div><div style={{ color: T.text, fontSize: 12, flex: 1 }}>{f.client_nom}</div><div style={{ color: T.text, fontSize: 12, fontWeight: 700 }}>{fmtShort(f.montant_ttc)} F</div><Badge status={f.statut} /></div><div style={{ display: "flex", gap: 6, marginTop: 6 }}>{f.statut !== "payée" && <button onClick={() => markPaid(f.id)} style={{ background: T.accentDim, border: `1px solid ${T.accentBorder}`, borderRadius: 5, padding: "3px 9px", color: T.accent, fontSize: 10, cursor: "pointer", fontWeight: 600 }}>✓ Payée</button>}<button onClick={() => generatePDF(f)} style={{ background: T.blueDim, border: `1px solid ${T.blue}30`, borderRadius: 5, padding: "3px 9px", color: T.blue, fontSize: 10, cursor: "pointer", fontWeight: 600 }}>⬇ PDF</button></div></div>))}</div>}
+      {loading ? <div style={{ textAlign: "center", padding: 40, color: T.sub, fontSize: 12 }}>Chargement…</div> : factures.length === 0 ? <div style={{ textAlign: "center", padding: 40, color: T.sub, fontSize: 13 }}>Aucune facture.</div> : <div style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 11, overflow: "hidden" }}>{factures.map((f, i) => (<div key={f.id} style={{ padding: "10px 13px", borderBottom: i < factures.length - 1 ? `1px solid ${T.border}` : "none" }}><div style={{ display: "flex", alignItems: "center", gap: 8 }}><div style={{ color: T.dim, fontSize: 9, fontFamily: "monospace", minWidth: 90 }}>{f.reference}</div><div style={{ color: T.text, fontSize: 12, flex: 1 }}>{f.client_nom}</div><div style={{ color: T.text, fontSize: 12, fontWeight: 700 }}>{fmtShort(f.montant_ttc)} F</div><Badge status={f.statut} /></div><div style={{ display: "flex", gap: 6, marginTop: 6 }}>{f.statut !== "payée" && <button onClick={() => markPaid(f.id)} style={{ background: T.accentDim, border: `1px solid ${T.accentBorder}`, borderRadius: 5, padding: "3px 9px", color: T.accent, fontSize: 10, cursor: "pointer", fontWeight: 600 }}>✓ Payée</button>}<button onClick={() => generatePDF(f, company)} style={{ background: T.blueDim, border: `1px solid ${T.blue}30`, borderRadius: 5, padding: "3px 9px", color: T.blue, fontSize: 10, cursor: "pointer", fontWeight: 600 }}>⬇ PDF</button></div></div>))}</div>}
     </div>
   );
 }
@@ -895,6 +918,83 @@ function UpgradeModule({ email, company }) {
   );
 }
 
+function CompanySettingsModule({ token, userId, toast, company, onUpdate }) {
+  const [form, setForm] = useState(company || DEFAULT_COMPANY);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { if (company) setForm(company); }, [company]);
+
+  const save = async () => {
+    if (!form.nom || form.nom.trim().length < 2) return toast("Nom d'entreprise requis", "error");
+    setSaving(true);
+    try {
+      const result = await companyDb.upsert(userId, {
+        nom: form.nom.trim(),
+        adresse: form.adresse || "",
+        telephone: form.telephone || "",
+        email: form.email || "",
+        rccm: form.rccm || "",
+        tva: form.tva || "",
+        regime: form.regime || "Réel Simplifié — SYSCOHADA",
+      }, token);
+      const updated = Array.isArray(result) ? result[0] : result;
+      onUpdate(updated || form);
+      toast("Informations entreprise enregistrées ✓", "success");
+    } catch (e) { toast(e.message, "error"); }
+    setSaving(false);
+  };
+
+  const fields = [
+    { k: "nom", label: "Nom de l'entreprise *", placeholder: "Ex: NeoTech Solutions" },
+    { k: "adresse", label: "Adresse", placeholder: "Ex: Lomé, Togo" },
+    { k: "telephone", label: "Téléphone", placeholder: "Ex: +228 90 00 00 00" },
+    { k: "email", label: "Email", placeholder: "Ex: contact@entreprise.tg" },
+    { k: "rccm", label: "RCCM", placeholder: "Ex: RC/LFM/2024/B/XXXXX" },
+    { k: "tva", label: "Numéro TVA", placeholder: "Ex: TG20240001" },
+  ];
+
+  return (
+    <div style={{ padding: 18, height: "100%", overflowY: "auto" }}>
+      <div style={{ color: T.sub, fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", marginBottom: 4 }}>⚙ CONFIGURATION</div>
+      <div style={{ color: T.text, fontSize: 17, fontWeight: 800, marginBottom: 4 }}>Paramètres entreprise</div>
+      <div style={{ color: T.sub, fontSize: 12, marginBottom: 16 }}>Ces informations apparaissent sur vos factures PDF</div>
+
+      <div style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 12, padding: 16 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {fields.map(f => (
+            <div key={f.k}>
+              <div style={{ color: T.sub, fontSize: 11, marginBottom: 5 }}>{f.label}</div>
+              <input
+                value={form[f.k] || ""}
+                onChange={e => setForm(p => ({ ...p, [f.k]: e.target.value }))}
+                placeholder={f.placeholder}
+                style={{ width: "100%", background: T.s3, border: `1px solid ${T.border}`, borderRadius: 8, padding: "10px 13px", color: T.text, fontSize: 13, outline: "none" }}
+              />
+            </div>
+          ))}
+        </div>
+        <button onClick={save} disabled={saving} style={{ width: "100%", marginTop: 16, background: saving ? T.s3 : T.accent, border: "none", borderRadius: 9, padding: "12px", color: saving ? T.sub : T.bg, fontWeight: 800, fontSize: 14, cursor: saving ? "default" : "pointer" }}>
+          {saving ? "Enregistrement…" : "Enregistrer"}
+        </button>
+      </div>
+
+      <div style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 12, padding: 16, marginTop: 14 }}>
+        <div style={{ color: T.sub, fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", marginBottom: 10 }}>APERÇU SUR FACTURE</div>
+        <div style={{ background: "white", borderRadius: 8, padding: 14 }}>
+          <div style={{ color: "#00C48C", fontWeight: 900, fontSize: 15 }}>{form.nom || "Mon Entreprise"}</div>
+          <div style={{ color: "#666", fontSize: 10, marginTop: 4, lineHeight: 1.5 }}>
+            {form.adresse || "Lomé, Togo"}<br />
+            {form.telephone && <>Tél : {form.telephone}<br /></>}
+            {form.email && <>Email : {form.email}<br /></>}
+            {form.rccm && <>RCCM : {form.rccm}<br /></>}
+            {form.tva && <>N° TVA : {form.tva}</>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── NAV ─── */
 const NAV = [
   { id: "dashboard", icon: "⬡", label: "Tableau de bord" },
@@ -903,10 +1003,11 @@ const NAV = [
   { id: "factures", icon: "◧", label: "Facturation" },
   { id: "tresorerie", icon: "◈", label: "Trésorerie" },
   { id: "reminders", icon: "⚡", label: "Relances" },
+  { id: "settings", icon: "⚙", label: "Paramètres" },
 ];
 
 /* ─── ROOT ─── */
-export default function NeoERPV10() {
+export default function NeoERPV11() {
   const [screen, setScreen] = useState("landing");
   const [authMode, setAuthMode] = useState("login");
   const [session, setSession] = useState(null);
@@ -916,6 +1017,7 @@ export default function NeoERPV10() {
   const [toast, setToast] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [factures, setFactures] = useState([]);
+  const [companySettings, setCompanySettings] = useState(null);
 
   useEffect(() => {
     const run = async () => {
@@ -937,6 +1039,16 @@ export default function NeoERPV10() {
     }
   }, [session, refreshKey, screen]);
 
+  // Load company settings
+  useEffect(() => {
+    if (session && screen === "app") {
+      companyDb.get(session.user?.id, session.token).then(c => {
+        if (c) setCompanySettings(c);
+        else setCompanySettings({ ...DEFAULT_COMPANY, nom: session.company || "Mon Entreprise" });
+      }).catch(() => setCompanySettings({ ...DEFAULT_COMPANY, nom: session.company || "Mon Entreprise" }));
+    }
+  }, [session, screen]);
+
   const showToast = (msg, type = "success") => setToast({ msg, type });
   const refresh = () => setRefreshKey(k => k + 1);
   const handleGetStarted = (mode) => { setAuthMode(mode); setScreen("auth"); };
@@ -955,10 +1067,11 @@ export default function NeoERPV10() {
       case "dashboard": return <Dashboard {...props} onNavigate={setView} plan={session.plan} company={session.company} />;
       case "agent": return <AIAgent token={session.token} userId={session.user?.id} onRefresh={refresh} />;
       case "clients": return <ClientsModule {...props} />;
-      case "factures": return <FacturesModule {...props} />;
+      case "factures": return <FacturesModule {...props} company={companySettings} />;
       case "tresorerie": return <TresorerieModule {...props} />;
       case "reminders": return <RemindersModule factures={factures} token={session.token} userId={session.user?.id} toast={showToast} />;
       case "upgrade": return <UpgradeModule email={session.user?.email} company={session.company} />;
+      case "settings": return <CompanySettingsModule token={session.token} userId={session.user?.id} toast={showToast} company={companySettings} onUpdate={setCompanySettings} />;
       default: return <Dashboard {...props} onNavigate={setView} plan={session.plan} company={session.company} />;
     }
   };
@@ -971,7 +1084,7 @@ export default function NeoERPV10() {
       <div style={{ width: collapsed ? 50 : 210, flexShrink: 0, background: T.s1, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column", transition: "width 0.22s", overflow: "hidden" }}>
         <div style={{ padding: "13px 11px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ width: 27, height: 27, borderRadius: 8, background: `linear-gradient(135deg, ${T.accent}, #009970)`, display: "flex", alignItems: "center", justifyContent: "center", color: T.bg, fontWeight: 900, fontSize: 12, flexShrink: 0 }}>N</div>
-          {!collapsed && (<><div><div style={{ color: T.text, fontWeight: 800, fontSize: 12 }}>NeoERP AI</div><div style={{ color: T.accent, fontSize: 9, fontWeight: 600 }}>● V10 · Paiements FedaPay</div></div><button onClick={() => setCollapsed(true)} style={{ marginLeft: "auto", background: "none", border: "none", color: T.dim, cursor: "pointer" }}>⇤</button></>)}
+          {!collapsed && (<><div><div style={{ color: T.text, fontWeight: 800, fontSize: 12 }}>NeoERP AI</div><div style={{ color: T.accent, fontSize: 9, fontWeight: 600 }}>● V11 · Parametres entreprise</div></div><button onClick={() => setCollapsed(true)} style={{ marginLeft: "auto", background: "none", border: "none", color: T.dim, cursor: "pointer" }}>⇤</button></>)}
           {collapsed && <button onClick={() => setCollapsed(false)} style={{ background: "none", border: "none", color: T.dim, cursor: "pointer" }}>⇥</button>}
         </div>
         <nav style={{ flex: 1, padding: "7px 5px" }}>
@@ -996,7 +1109,7 @@ export default function NeoERPV10() {
           <span style={{ color: T.sub, fontSize: 11, flex: 1 }}>{NAV.find(n => n.id === view)?.label}</span>
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <div style={{ width: 5, height: 5, borderRadius: "50%", background: T.accent, boxShadow: `0 0 5px ${T.accent}` }} />
-            <span style={{ color: T.sub, fontSize: 10 }}>V10 · Paiements FedaPay</span>
+            <span style={{ color: T.sub, fontSize: 10 }}>V11 · Parametres entreprise</span>
           </div>
         </div>
         <div style={{ flex: 1, overflow: "hidden" }}>{renderView()}</div>
@@ -1005,3 +1118,4 @@ export default function NeoERPV10() {
     </div>
   );
 }
+
