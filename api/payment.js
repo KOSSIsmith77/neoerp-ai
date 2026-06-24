@@ -23,7 +23,7 @@ export default async function handler(req) {
         description: `Abonnement NeoERP AI - Plan ${plan}`,
         amount: amount,
         currency: { iso: "XOF" },
-        callback_url: "https://neoerp-ai.vercel.app/payment-success",
+        callback_url: "https://neoerp-ai.vercel.app/api/payment-success",
         customer: {
           firstname: firstname || "Client",
           lastname: lastname || "NeoERP",
@@ -55,7 +55,10 @@ export default async function handler(req) {
 
     const tokenData = await tokenResponse.json();
 
-    return new Response(JSON.stringify({ payment_url: tokenData.url, transaction_id: transactionId }), {
+    return new Response(JSON.stringify({
+      payment_url: tokenData.url,
+      transaction_id: transactionId
+    }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
