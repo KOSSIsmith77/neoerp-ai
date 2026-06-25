@@ -995,6 +995,208 @@ function CompanySettingsModule({ token, userId, toast, company, onUpdate }) {
   );
 }
 
+/* ─── GRAND LIVRE SYSCOHADA ─── */
+function generateGrandLivrePDF(ecritures, company) {
+  const co = company || DEFAULT_COMPANY;
+  const date = new Date().toLocaleDateString("fr-FR");
+  const total = ecritures.reduce((s, e) => s + (e.montant || 0), 0);
+
+  const rows = ecritures.map(e => `
+    <tr>
+      <td>${new Date(e.created_at).toLocaleDateString("fr-FR")}</td>
+      <td style="font-family:monospace;font-weight:700">${e.debit_compte || "—"}</td>
+      <td>${e.debit_libelle || "—"}</td>
+      <td style="font-family:monospace;font-weight:700">${e.credit_compte || "—"}</td>
+      <td>${e.credit_libelle || "—"}</td>
+      <td style="text-align:right;font-weight:700">${(e.montant || 0).toLocaleString("fr-FR")}</td>
+      <td style="font-size:10px;color:#666">${e.description || "—"}</td>
+    </tr>
+  `).join("");
+
+  const html = `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8"/>
+<title>Grand Livre SYSCOHADA — ${co.nom}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;font-size:11px;color:#1a1a2e;padding:30px}
+.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:30px;padding-bottom:16px;border-bottom:3px solid #00C48C}
+.logo{font-size:18px;font-weight:900;color:#00C48C}
+.co{font-size:10px;color:#666;margin-top:4px;line-height:1.5}
+.title{text-align:right}
+.title h1{font-size:20px;font-weight:900;color:#1a1a2e}
+.title p{color:#666;font-size:11px;margin-top:4px}
+.badge{display:inline-block;background:#e8f9f2;color:#00C48C;border:1px solid #00C48C40;border-radius:4px;padding:2px 8px;font-size:9px;font-weight:700;margin-top:6px}
+table{width:100%;border-collapse:collapse;margin-bottom:20px}
+thead tr{background:#1a1a2e;color:white}
+thead th{padding:8px 10px;text-align:left;font-size:10px;font-weight:700}
+tbody tr{border-bottom:1px solid #f0f0f0}
+tbody tr:nth-child(even){background:#fafafa}
+tbody td{padding:7px 10px;font-size:10px}
+.total-row{background:#f0fdf9;font-weight:800;border-top:2px solid #00C48C}
+.total-row td{padding:10px;font-size:12px}
+.footer{border-top:1px solid #f0f0f0;padding-top:12px;font-size:9px;color:#999;text-align:center}
+.summary{display:flex;gap:16px;margin-bottom:20px}
+.summary-card{flex:1;background:#f8f9ff;border:1px solid #e8e9f0;border-radius:8px;padding:12px}
+.summary-label{font-size:9px;color:#999;font-weight:700;letter-spacing:0.1em;margin-bottom:4px}
+.summary-value{font-size:16px;font-weight:900;color:#1a1a2e}
+</style></head><body>
+<div class="header">
+  <div>
+    <div class="logo">${co.nom}</div>
+    <div class="co">${co.adresse}${co.rccm ? `<br/>RCCM : ${co.rccm}` : ""}${co.tva ? `<br/>N° TVA : ${co.tva}` : ""}</div>
+  </div>
+  <div class="title">
+    <h1>GRAND LIVRE</h1>
+    <p>Plan Comptable SYSCOHADA</p>
+    <p>Édité le ${date}</p>
+    <span class="badge">SYSCOHADA · UEMOA</span>
+  </div>
+</div>
+
+<div class="summary">
+  <div class="summary-card">
+    <div class="summary-label">TOTAL ÉCRITURES</div>
+    <div class="summary-value">${ecritures.length}</div>
+  </div>
+  <div class="summary-card">
+    <div class="summary-label">TOTAL MONTANTS</div>
+    <div class="summary-value">${total.toLocaleString("fr-FR")} FCFA</div>
+  </div>
+  <div class="summary-card">
+    <div class="summary-label">PÉRIODE</div>
+    <div class="summary-value">${new Date().getFullYear()}</div>
+  </div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th>Cpte Débit</th>
+      <th>Libellé Débit</th>
+      <th>Cpte Crédit</th>
+      <th>Libellé Crédit</th>
+      <th style="text-align:right">Montant (FCFA)</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${rows}
+    <tr class="total-row">
+      <td colspan="5"><strong>TOTAL GÉNÉRAL</strong></td>
+      <td style="text-align:right"><strong>${total.toLocaleString("fr-FR")} FCFA</strong></td>
+      <td></td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="footer">
+  ${co.nom} — ${co.adresse} — Grand Livre SYSCOHADA généré par NeoERP AI — neoerp-ai.vercel.app
+</div>
+</body></html>`;
+
+  const blob = new Blob([html], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `Grand_Livre_SYSCOHADA_${new Date().getFullYear()}.html`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ─── COMPTABILITE MODULE ─── */
+function ComptabiliteModule({ token, userId, toast, company }) {
+  const [ecritures, setEcritures] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const data = await db.query("ecritures", { select: "*", order: "created_at.desc" }, token);
+        setEcritures(Array.isArray(data) ? data : []);
+      } catch (e) { toast(e.message, "error"); }
+      setLoading(false);
+    };
+    load();
+  }, []);
+
+  const exportGrandLivre = async () => {
+    if (ecritures.length === 0) return toast("Aucune écriture à exporter", "error");
+    setExporting(true);
+    await new Promise(r => setTimeout(r, 500));
+    generateGrandLivrePDF(ecritures, company);
+    setExporting(false);
+    toast("Grand Livre exporté ✓", "success");
+  };
+
+  // Group by compte
+  const comptes = {};
+  ecritures.forEach(e => {
+    const c = e.debit_compte || e.credit_compte || "—";
+    if (!comptes[c]) comptes[c] = { count: 0, total: 0, libelle: e.debit_libelle || e.credit_libelle || "—" };
+    comptes[c].count++;
+    comptes[c].total += e.montant || 0;
+  });
+
+  return (
+    <div style={{ padding: 18, height: "100%", overflowY: "auto" }}>
+      <div style={{ color: T.sub, fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", marginBottom: 4 }}>📚 SYSCOHADA</div>
+      <div style={{ color: T.text, fontSize: 17, fontWeight: 800, marginBottom: 4 }}>Comptabilité</div>
+      <div style={{ color: T.sub, fontSize: 12, marginBottom: 16 }}>Grand livre — Écritures SYSCOHADA</div>
+
+      <button onClick={exportGrandLivre} disabled={exporting || loading} style={{ width: "100%", background: exporting ? T.s3 : T.accent, border: "none", borderRadius: 9, padding: "13px", color: exporting ? T.sub : T.bg, fontWeight: 800, fontSize: 14, cursor: exporting ? "default" : "pointer", marginBottom: 16 }}>
+        {exporting ? "Génération en cours…" : "⬇ Exporter Grand Livre SYSCOHADA (PDF)"}
+      </button>
+
+      <div style={{ background: T.accentDim, border: `1px solid ${T.accentBorder}`, borderRadius: 9, padding: "10px 13px", marginBottom: 16, fontSize: 11, color: T.accent }}>
+        ✓ Conforme SYSCOHADA · UEMOA · Exploitable par votre comptable
+      </div>
+
+      {/* Résumé par compte */}
+      <div style={{ color: T.sub, fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", marginBottom: 10 }}>RÉSUMÉ PAR COMPTE</div>
+      {loading ? (
+        <div style={{ textAlign: "center", padding: 40, color: T.sub, fontSize: 12 }}>Chargement…</div>
+      ) : Object.keys(comptes).length === 0 ? (
+        <div style={{ textAlign: "center", padding: 40, color: T.sub, fontSize: 13 }}>Aucune écriture comptable.</div>
+      ) : (
+        <div style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 11, overflow: "hidden", marginBottom: 16 }}>
+          {Object.entries(comptes).map(([compte, info], i) => (
+            <div key={compte} style={{ padding: "10px 13px", borderBottom: i < Object.keys(comptes).length - 1 ? `1px solid ${T.border}` : "none", display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 8, background: compte === "411" ? T.accentDim : compte === "706" ? T.blueDim : T.goldDim, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "monospace", fontWeight: 900, fontSize: 13, color: compte === "411" ? T.accent : compte === "706" ? T.blue : T.gold, flexShrink: 0 }}>{compte}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ color: T.text, fontSize: 12, fontWeight: 600 }}>{info.libelle}</div>
+                <div style={{ color: T.sub, fontSize: 10 }}>{info.count} écriture{info.count > 1 ? "s" : ""}</div>
+              </div>
+              <div style={{ color: T.text, fontSize: 13, fontWeight: 800 }}>{fmtShort(info.total)} F</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Liste des écritures récentes */}
+      {ecritures.length > 0 && (
+        <>
+          <div style={{ color: T.sub, fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", marginBottom: 10 }}>DERNIÈRES ÉCRITURES</div>
+          <div style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 11, overflow: "hidden" }}>
+            {ecritures.slice(0, 10).map((e, i) => (
+              <div key={e.id} style={{ padding: "9px 13px", borderBottom: i < Math.min(ecritures.length, 10) - 1 ? `1px solid ${T.border}` : "none" }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <div style={{ fontFamily: "monospace", fontSize: 10, color: T.accent, fontWeight: 700, minWidth: 30 }}>{e.debit_compte || e.credit_compte}</div>
+                  <div style={{ color: T.text, fontSize: 11, flex: 1 }}>{e.description || e.debit_libelle || e.credit_libelle || "—"}</div>
+                  <div style={{ color: T.text, fontSize: 11, fontWeight: 700 }}>{fmtShort(e.montant)} F</div>
+                </div>
+                <div style={{ color: T.dim, fontSize: 9, marginTop: 2, marginLeft: 38 }}>{new Date(e.created_at).toLocaleDateString("fr-FR")}</div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ─── NAV ─── */
 const NAV = [
   { id: "dashboard", icon: "⬡", label: "Tableau de bord" },
@@ -1003,11 +1205,12 @@ const NAV = [
   { id: "factures", icon: "◧", label: "Facturation" },
   { id: "tresorerie", icon: "◈", label: "Trésorerie" },
   { id: "reminders", icon: "⚡", label: "Relances" },
+  { id: "comptabilite", icon: "📚", label: "Comptabilité" },
   { id: "settings", icon: "⚙", label: "Paramètres" },
 ];
 
 /* ─── ROOT ─── */
-export default function NeoERPV11() {
+export default function NeoERPV12() {
   const [screen, setScreen] = useState("landing");
   const [authMode, setAuthMode] = useState("login");
   const [session, setSession] = useState(null);
@@ -1071,6 +1274,7 @@ export default function NeoERPV11() {
       case "tresorerie": return <TresorerieModule {...props} />;
       case "reminders": return <RemindersModule factures={factures} token={session.token} userId={session.user?.id} toast={showToast} />;
       case "upgrade": return <UpgradeModule email={session.user?.email} company={session.company} />;
+      case "comptabilite": return <ComptabiliteModule token={session.token} userId={session.user?.id} toast={showToast} company={companySettings} />;
       case "settings": return <CompanySettingsModule token={session.token} userId={session.user?.id} toast={showToast} company={companySettings} onUpdate={setCompanySettings} />;
       default: return <Dashboard {...props} onNavigate={setView} plan={session.plan} company={session.company} />;
     }
@@ -1084,7 +1288,7 @@ export default function NeoERPV11() {
       <div style={{ width: collapsed ? 50 : 210, flexShrink: 0, background: T.s1, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column", transition: "width 0.22s", overflow: "hidden" }}>
         <div style={{ padding: "13px 11px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ width: 27, height: 27, borderRadius: 8, background: `linear-gradient(135deg, ${T.accent}, #009970)`, display: "flex", alignItems: "center", justifyContent: "center", color: T.bg, fontWeight: 900, fontSize: 12, flexShrink: 0 }}>N</div>
-          {!collapsed && (<><div><div style={{ color: T.text, fontWeight: 800, fontSize: 12 }}>NeoERP AI</div><div style={{ color: T.accent, fontSize: 9, fontWeight: 600 }}>● V11 · Parametres entreprise</div></div><button onClick={() => setCollapsed(true)} style={{ marginLeft: "auto", background: "none", border: "none", color: T.dim, cursor: "pointer" }}>⇤</button></>)}
+          {!collapsed && (<><div><div style={{ color: T.text, fontWeight: 800, fontSize: 12 }}>NeoERP AI</div><div style={{ color: T.accent, fontSize: 9, fontWeight: 600 }}>● V12 · Grand Livre SYSCOHADA</div></div><button onClick={() => setCollapsed(true)} style={{ marginLeft: "auto", background: "none", border: "none", color: T.dim, cursor: "pointer" }}>⇤</button></>)}
           {collapsed && <button onClick={() => setCollapsed(false)} style={{ background: "none", border: "none", color: T.dim, cursor: "pointer" }}>⇥</button>}
         </div>
         <nav style={{ flex: 1, padding: "7px 5px" }}>
@@ -1099,23 +1303,4 @@ export default function NeoERPV11() {
         <div style={{ padding: "9px 9px", borderTop: `1px solid ${T.border}` }}>
           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: collapsed ? 0 : 7 }}>
             <div style={{ width: 24, height: 24, borderRadius: 6, background: `linear-gradient(135deg, ${T.blue}, #2060CC)`, display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: 800, fontSize: 10, flexShrink: 0 }}>{session.user?.email?.[0]?.toUpperCase()}</div>
-            {!collapsed && <div style={{ overflow: "hidden" }}><div style={{ color: T.text, fontSize: 11, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{session.company}</div><div style={{ color: T.dim, fontSize: 9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{session.user?.email}</div></div>}
-          </div>
-          {!collapsed && <button onClick={handleLogout} style={{ width: "100%", background: T.s2, border: `1px solid ${T.border}`, borderRadius: 6, padding: "5px", color: T.sub, fontSize: 10, cursor: "pointer" }}>Déconnexion</button>}
-        </div>
-      </div>
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ padding: "0 16px", height: 43, borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", background: T.s1, flexShrink: 0 }}>
-          <span style={{ color: T.sub, fontSize: 11, flex: 1 }}>{NAV.find(n => n.id === view)?.label}</span>
-          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-            <div style={{ width: 5, height: 5, borderRadius: "50%", background: T.accent, boxShadow: `0 0 5px ${T.accent}` }} />
-            <span style={{ color: T.sub, fontSize: 10 }}>V11 · Parametres entreprise</span>
-          </div>
-        </div>
-        <div style={{ flex: 1, overflow: "hidden" }}>{renderView()}</div>
-      </div>
-      {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
-    </div>
-  );
-}
-
+            {!collapsed && <div style={{ overflow: "hidden" }}><div style={{ color: T.text, fontSize: 11,
