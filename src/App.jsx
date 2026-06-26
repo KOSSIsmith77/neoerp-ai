@@ -1303,4 +1303,22 @@ export default function NeoERPV12() {
         <div style={{ padding: "9px 9px", borderTop: `1px solid ${T.border}` }}>
           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: collapsed ? 0 : 7 }}>
             <div style={{ width: 24, height: 24, borderRadius: 6, background: `linear-gradient(135deg, ${T.blue}, #2060CC)`, display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: 800, fontSize: 10, flexShrink: 0 }}>{session.user?.email?.[0]?.toUpperCase()}</div>
-            {!collapsed && <div style={{ overflow: "hidden" }}><div style={{ color: T.text, fontSize: 11,
+            {!collapsed && <div style={{ overflow: "hidden" }}><div style={{ color: T.text, fontSize: 11,fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{session.company}</div><div style={{ color: T.dim, fontSize: 9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{session.user?.email}</div></div>}
+          </div>
+          {!collapsed && <button onClick={handleLogout} style={{ width: "100%", background: T.s2, border: `1px solid ${T.border}`, borderRadius: 6, padding: "5px", color: T.sub, fontSize: 10, cursor: "pointer" }}>Déconnexion</button>}
+        </div>
+      </div>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ padding: "0 16px", height: 43, borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", background: T.s1, flexShrink: 0 }}>
+          <span style={{ color: T.sub, fontSize: 11, flex: 1 }}>{NAV.find(n => n.id === view)?.label}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <div style={{ width: 5, height: 5, borderRadius: "50%", background: T.accent, boxShadow: `0 0 5px ${T.accent}` }} />
+            <span style={{ color: T.sub, fontSize: 10 }}>V12 · Grand Livre SYSCOHADA</span>
+          </div>
+        </div>
+        <div style={{ flex: 1, overflow: "hidden" }}>{renderView()}</div>
+      </div>
+      {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
+    </div>
+  );
+}
