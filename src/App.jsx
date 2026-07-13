@@ -222,7 +222,7 @@ function LineChart({ data, color, height = 80, title }) {
         <defs>
           <linearGradient id={`lg${color.slice(1)}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={color} stopOpacity="0.3" />
-            <stop offset="100%" stopColor={color} stopOpacity="0" />
+                  <stop offset="100%" stopColor={color} stopOpacity="0" />
           </linearGradient>
         </defs>
         <polygon points={`0,${height} ${pts.join(" ")} 100,${height}`} fill={`url(#lg${color.slice(1)})`} />
@@ -446,7 +446,7 @@ function Dashboard({ token, userId, onNavigate, refreshKey, plan, company }) {
 
   return (
     <div style={{ padding: 18, height: "100%", overflowY: "auto" }}>
-      {/* Header */}
+                     {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
         <div style={{ flex: 1 }}>
           <div style={{ color: T.text, fontSize: 16, fontWeight: 800 }}>Bonjour 👋</div>
@@ -670,7 +670,7 @@ function FacturesModule({ token, userId, toast, refreshKey, company }) {
   const load = async () => { setLoading(true); try { const d = await db.query("factures", { select: "*", order: "created_at.desc" }, token); setFactures(Array.isArray(d) ? d : []); } catch (e) { toast(e.message, "error"); } setLoading(false); };
   useEffect(() => { load(); }, [refreshKey]);
   const save = async () => {
-    const e = validate.facture(form); if (e) return toast(e, "error");
+            const e = validate.facture(form); if (e) return toast(e, "error");
     try {
       const ht = Math.round(Number(form.montant_ht)), tva = Math.round(ht * 0.18), ttc = ht + tva, ref = genRef();
       await db.insert("factures", { reference: ref, client_nom: form.client_nom.trim(), montant_ht: ht, tva_rate: 18, tva_montant: tva, montant_ttc: ttc, statut: "impayée", description: form.description || null, date_echeance: form.date_echeance || null, user_id: userId }, token);
@@ -806,95 +806,7 @@ function LandingPage({ onGetStarted }) {
   return (
     <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", background: T.bg, color: T.text, minHeight: "100vh", overflowY: "auto" }}>
       <style>{`* { box-sizing: border-box; margin: 0; padding: 0; }`}</style>
-      <nav style={{ position: "sticky", top: 0, background: `${T.bg}EE`, backdropFilter: "blur(12px)", borderBottom: `1px solid ${T.border}`, padding: "12px 20px", display: "flex", alignItems: "center", gap: 12, zIndex: 50 }}>
-        <div style={{ width: 28, height: 28, borderRadius: 8, background: `linear-gradient(135deg, ${T.accent}, #009970)`, display: "flex", alignItems: "center", justifyContent: "center", color: T.bg, fontWeight: 900, fontSize: 13 }}>N</div>
-        <div style={{ color: T.text, fontWeight: 800, fontSize: 14 }}>NeoERP AI</div>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-          <button onClick={() => onGetStarted("login")} style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 8, padding: "7px 14px", color: T.sub, fontSize: 12, cursor: "pointer", fontWeight: 600 }}>Se connecter</button>
-          <button onClick={() => onGetStarted("register")} style={{ background: T.accent, border: "none", borderRadius: 8, padding: "7px 14px", color: T.bg, fontSize: 12, cursor: "pointer", fontWeight: 700 }}>Essai gratuit</button>
-        </div>
-      </nav>
-      <div style={{ padding: "60px 20px 40px", textAlign: "center", maxWidth: 600, margin: "0 auto" }}>
-        <div style={{ background: T.accentDim, border: `1px solid ${T.accentBorder}`, borderRadius: 20, padding: "4px 14px", display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 20 }}>
-          <div style={{ width: 6, height: 6, borderRadius: "50%", background: T.accent }} />
-          <span style={{ color: T.accent, fontSize: 11, fontWeight: 700 }}>ERP IA · SYSCOHADA · PME Afrique</span>
-        </div>
-        <h1 style={{ fontSize: 30, fontWeight: 900, lineHeight: 1.2, marginBottom: 16, letterSpacing: "-0.03em" }}>Dirigez votre entreprise<br /><span style={{ color: T.accent }}>avec l'intelligence artificielle</span></h1>
-        <p style={{ color: T.sub, fontSize: 14, lineHeight: 1.7, marginBottom: 28 }}>Le premier ERP autonome pour PME africaines. Facturez, gérez votre comptabilité SYSCOHADA et pilotez votre trésorerie en langage naturel.</p>
-        <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-          <button onClick={() => onGetStarted("register")} style={{ background: T.accent, border: "none", borderRadius: 10, padding: "13px 24px", color: T.bg, fontWeight: 800, fontSize: 14, cursor: "pointer" }}>Démarrer gratuitement →</button>
-          <button onClick={() => onGetStarted("login")} style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 10, padding: "13px 24px", color: T.text, fontWeight: 600, fontSize: 14, cursor: "pointer" }}>Se connecter</button>
-        </div>
-        <div style={{ color: T.dim, fontSize: 11, marginTop: 14 }}>✓ 14 jours gratuits · ✓ Sans carte bancaire · ✓ FCFA & SYSCOHADA</div>
-      </div>
-      <div style={{ padding: "0 20px 40px", maxWidth: 600, margin: "0 auto" }}>
-        <div style={{ textAlign: "center", marginBottom: 24 }}><h2 style={{ fontSize: 20, fontWeight: 900 }}>Tout ce dont votre PME a besoin</h2></div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          {features.map((f, i) => <div key={i} style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 11, padding: "13px 13px" }}><div style={{ fontSize: 18, marginBottom: 7 }}>{f.icon}</div><div style={{ color: T.text, fontWeight: 700, fontSize: 13, marginBottom: 3 }}>{f.title}</div><div style={{ color: T.sub, fontSize: 11, lineHeight: 1.5 }}>{f.desc}</div></div>)}
-        </div>
-      </div>
-      <div style={{ padding: "0 20px 50px", maxWidth: 600, margin: "0 auto" }}>
-        <div style={{ textAlign: "center", marginBottom: 24 }}><h2 style={{ fontSize: 20, fontWeight: 900 }}>Tarifs simples</h2><p style={{ color: T.sub, fontSize: 12, marginTop: 6 }}>En FCFA · Sans engagement</p></div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {PLANS.map((plan) => (
-            <div key={plan.id} style={{ background: plan.popular ? T.accentDim : T.s2, border: `2px solid ${plan.popular ? T.accent : T.border}`, borderRadius: 12, padding: "16px", position: "relative" }}>
-              {plan.popular && <div style={{ position: "absolute", top: -10, right: 14, background: T.accent, color: T.bg, borderRadius: 20, padding: "2px 10px", fontSize: 9, fontWeight: 800 }}>POPULAIRE</div>}
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-                <div><div style={{ color: plan.color, fontWeight: 800, fontSize: 15 }}>{plan.name}</div><div style={{ color: T.sub, fontSize: 11 }}>{plan.desc}</div></div>
-                <div style={{ textAlign: "right" }}><div style={{ color: T.text, fontWeight: 900, fontSize: 18 }}>{plan.price.toLocaleString("fr-FR")} <span style={{ fontSize: 10, color: T.sub, fontWeight: 400 }}>FCFA/mois</span></div></div>
-              </div>
-              <div style={{ marginBottom: 12 }}>{plan.features.map((f, i) => <div key={i} style={{ display: "flex", gap: 6, padding: "3px 0", fontSize: 11, color: T.sub }}><span style={{ color: plan.color }}>✓</span> {f}</div>)}</div>
-              <button onClick={() => setPayingPlan(plan)} style={{ width: "100%", background: plan.popular ? T.accent : T.s3, border: `1px solid ${plan.popular ? T.accent : T.border}`, borderRadius: 8, padding: "10px", color: plan.popular ? T.bg : T.text, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{plan.cta}{plan.trial ? " — 14 jours gratuits" : ""}</button>
-            </div>
-          ))}
-        </div>
-      </div>
-      <div style={{ borderTop: `1px solid ${T.border}`, padding: "16px 20px", textAlign: "center" }}>
-        <div style={{ color: T.dim, fontSize: 11 }}>© 2026 NeoERP AI — NeoTech Solutions — Lomé, Togo · SYSCOHADA · UEMOA</div>
-      </div>
-      {payingPlan && <PaymentModal plan={payingPlan} onClose={() => setPayingPlan(null)} onSuccess={() => setPayingPlan(null)} />}
-    </div>
-  );
-}
-
-/* ─── AUTH SCREEN ─── */
-function AuthScreen({ onAuth, defaultMode = "login" }) {
-  const [mode, setMode] = useState(defaultMode); const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [company, setCompany] = useState(""); const [loading, setLoading] = useState(false); const [error, setError] = useState("");
-  const submit = async () => {
-    if (!email || !password) return setError("Email et mot de passe obligatoires");
-    if (password.length < 6) return setError("Mot de passe minimum 6 caractères");
-    setLoading(true); setError("");
-    try {
-      if (mode === "register") { await auth.signUp(email, password); setMode("login"); setError("✓ Compte créé. Connectez-vous."); }
-      else { const r = await auth.signIn(email, password); const co = company || "Mon Entreprise"; auth.saveSession(r, co, "starter"); onAuth(r.access_token, r.refresh_token, r.user, co, "starter"); }
-    } catch (e) { setError(e.message); }
-    setLoading(false);
-  };
-  return (
-    <div style={{ height: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ width: "min(400px, 100%)" }}>
-        <div style={{ textAlign: "center", marginBottom: 24 }}>
-          <div style={{ width: 48, height: 48, borderRadius: 12, background: `linear-gradient(135deg, ${T.accent}, #009970)`, display: "flex", alignItems: "center", justifyContent: "center", color: T.bg, fontWeight: 900, fontSize: 20, margin: "0 auto 12px" }}>N</div>
-          <div style={{ color: T.text, fontSize: 20, fontWeight: 900 }}>NeoERP AI</div>
-          <div style={{ color: T.sub, fontSize: 12, marginTop: 3 }}>ERP intelligent · PME africaines · SYSCOHADA</div>
-        </div>
-        <div style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 14, padding: 20 }}>
-          <div style={{ display: "flex", marginBottom: 16, background: T.s3, borderRadius: 8, padding: 3 }}>{["login", "register"].map(m => <button key={m} onClick={() => { setMode(m); setError(""); }} style={{ flex: 1, background: mode === m ? T.accent : "none", border: "none", borderRadius: 6, padding: "7px", color: mode === m ? T.bg : T.sub, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{m === "login" ? "Se connecter" : "Créer un compte"}</button>)}</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-            {mode === "register" && <input value={company} onChange={e => setCompany(e.target.value)} placeholder="Nom de votre entreprise" style={{ background: T.s3, border: `1px solid ${T.border}`, borderRadius: 8, padding: "10px 13px", color: T.text, fontSize: 13, outline: "none" }} />}
-            <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" type="email" style={{ background: T.s3, border: `1px solid ${T.border}`, borderRadius: 8, padding: "10px 13px", color: T.text, fontSize: 13, outline: "none" }} />
-            <input value={password} onChange={e => setPassword(e.target.value)} placeholder="Mot de passe" type="password" onKeyDown={e => e.key === "Enter" && submit()} style={{ background: T.s3, border: `1px solid ${T.border}`, borderRadius: 8, padding: "10px 13px", color: T.text, fontSize: 13, outline: "none" }} />
-          </div>
-          {error && <div style={{ marginTop: 9, padding: "8px 11px", borderRadius: 7, background: error.startsWith("✓") ? T.accentDim : T.redDim, color: error.startsWith("✓") ? T.accent : T.red, fontSize: 12 }}>{error}</div>}
-          <button onClick={submit} disabled={loading} style={{ width: "100%", marginTop: 13, background: loading ? T.s3 : T.accent, border: "none", borderRadius: 8, padding: "12px", color: loading ? T.sub : T.bg, fontWeight: 800, fontSize: 14, cursor: loading ? "default" : "pointer" }}>{loading ? "Chargement…" : mode === "login" ? "Se connecter" : "Créer mon compte"}</button>
-          <div style={{ marginTop: 12, fontSize: 10, color: T.sub, textAlign: "center" }}>🔒 Données isolées · RLS · Session persistante</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function UpgradeModule({ email, company }) {
+      <nav style={{ position: "sticky", top: 0, background: `${T.bg}EE`, backdropFilter: "blur(12px)", borderBottom: `1px solid ${T.border}`, padding: "function UpgradeModule({ email, company }) {
   const [payingPlan, setPayingPlan] = useState(null);
   return (
     <div style={{ padding: 18, height: "100%", overflowY: "auto" }}>
@@ -1118,7 +1030,7 @@ function ComptabiliteModule({ token, userId, toast, company }) {
         setEcritures(Array.isArray(data) ? data : []);
       } catch (e) { toast(e.message, "error"); }
       setLoading(false);
-    };
+            };
     load();
   }, []);
 
@@ -1210,7 +1122,7 @@ const NAV = [
 ];
 
 /* ─── ROOT ─── */
-export default function NeoERPV12() {
+export default function NeoERPV13() {
   const [screen, setScreen] = useState("landing");
   const [authMode, setAuthMode] = useState("login");
   const [session, setSession] = useState(null);
@@ -1242,12 +1154,28 @@ export default function NeoERPV12() {
     }
   }, [session, refreshKey, screen]);
 
-  // Load company settings
+  // Load company settings — auto-initialise si absent
   useEffect(() => {
     if (session && screen === "app") {
-      companyDb.get(session.user?.id, session.token).then(c => {
-        if (c) setCompanySettings(c);
-        else setCompanySettings({ ...DEFAULT_COMPANY, nom: session.company || "Mon Entreprise" });
+      companyDb.get(session.user?.id, session.token).then(async c => {
+        if (c) {
+          setCompanySettings(c);
+        } else {
+          // Première connexion — créer automatiquement les paramètres
+          const defaults = {
+            nom: session.company || "Mon Entreprise",
+            adresse: "Lomé, Togo",
+            telephone: "",
+            email: session.user?.email || "",
+            rccm: "",
+            tva: "",
+            regime: "Réel Simplifié — SYSCOHADA",
+          };
+          try {
+            await companyDb.upsert(session.user?.id, defaults, session.token);
+          } catch (e) {}
+          setCompanySettings({ ...DEFAULT_COMPANY, ...defaults });
+        }
       }).catch(() => setCompanySettings({ ...DEFAULT_COMPANY, nom: session.company || "Mon Entreprise" }));
     }
   }, [session, screen]);
@@ -1288,7 +1216,7 @@ export default function NeoERPV12() {
       <div style={{ width: collapsed ? 50 : 210, flexShrink: 0, background: T.s1, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column", transition: "width 0.22s", overflow: "hidden" }}>
         <div style={{ padding: "13px 11px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ width: 27, height: 27, borderRadius: 8, background: `linear-gradient(135deg, ${T.accent}, #009970)`, display: "flex", alignItems: "center", justifyContent: "center", color: T.bg, fontWeight: 900, fontSize: 12, flexShrink: 0 }}>N</div>
-          {!collapsed && (<><div><div style={{ color: T.text, fontWeight: 800, fontSize: 12 }}>NeoERP AI</div><div style={{ color: T.accent, fontSize: 9, fontWeight: 600 }}>● V12 · Grand Livre SYSCOHADA</div></div><button onClick={() => setCollapsed(true)} style={{ marginLeft: "auto", background: "none", border: "none", color: T.dim, cursor: "pointer" }}>⇤</button></>)}
+          {!collapsed && (<><div><div style={{ color: T.text, fontWeight: 800, fontSize: 12 }}>NeoERP AI</div><div style={{ color: T.accent, fontSize: 9, fontWeight: 600 }}>● V13 · Auto company init</div></div><button onClick={() => setCollapsed(true)} style={{ marginLeft: "auto", background: "none", border: "none", color: T.dim, cursor: "pointer" }}>⇤</button></>)}
           {collapsed && <button onClick={() => setCollapsed(false)} style={{ background: "none", border: "none", color: T.dim, cursor: "pointer" }}>⇥</button>}
         </div>
         <nav style={{ flex: 1, padding: "7px 5px" }}>
@@ -1303,7 +1231,7 @@ export default function NeoERPV12() {
         <div style={{ padding: "9px 9px", borderTop: `1px solid ${T.border}` }}>
           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: collapsed ? 0 : 7 }}>
             <div style={{ width: 24, height: 24, borderRadius: 6, background: `linear-gradient(135deg, ${T.blue}, #2060CC)`, display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: 800, fontSize: 10, flexShrink: 0 }}>{session.user?.email?.[0]?.toUpperCase()}</div>
-            {!collapsed && <div style={{ overflow: "hidden" }}><div style={{ color: T.text, fontSize: 11,fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{session.company}</div><div style={{ color: T.dim, fontSize: 9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{session.user?.email}</div></div>}
+            {!collapsed && <div style={{ overflow: "hidden" }}><div style={{ color: T.text, fontSize: 11, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{session.company}</div><div style={{ color: T.dim, fontSize: 9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{session.user?.email}</div></div>}
           </div>
           {!collapsed && <button onClick={handleLogout} style={{ width: "100%", background: T.s2, border: `1px solid ${T.border}`, borderRadius: 6, padding: "5px", color: T.sub, fontSize: 10, cursor: "pointer" }}>Déconnexion</button>}
         </div>
@@ -1313,7 +1241,7 @@ export default function NeoERPV12() {
           <span style={{ color: T.sub, fontSize: 11, flex: 1 }}>{NAV.find(n => n.id === view)?.label}</span>
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <div style={{ width: 5, height: 5, borderRadius: "50%", background: T.accent, boxShadow: `0 0 5px ${T.accent}` }} />
-            <span style={{ color: T.sub, fontSize: 10 }}>V12 · Grand Livre SYSCOHADA</span>
+            <span style={{ color: T.sub, fontSize: 10 }}>V13 · Auto company init</span>
           </div>
         </div>
         <div style={{ flex: 1, overflow: "hidden" }}>{renderView()}</div>
@@ -1321,4 +1249,5 @@ export default function NeoERPV12() {
       {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   );
-}
+    }
+          
