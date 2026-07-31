@@ -1,3 +1,4 @@
+        
 import { useState, useEffect, useRef } from "react";
 
 /* ─── CONFIG ─── */
@@ -33,6 +34,27 @@ const T = {
 };
 
 const fmtShort = (n) => { n = Number(n || 0); if (n >= 1e6) return (n / 1e6).toFixed(1) + "M"; if (n >= 1e3) return (n / 1e3).toFixed(0) + "K"; return String(n); };
+
+/* ─── TRIAL SYSTEM ─── */
+const TRIAL_DAYS = 30;
+const trial = {
+  getDaysLeft(trialStart) {
+    if (!trialStart) return TRIAL_DAYS;
+    const elapsed = Math.floor((Date.now() - trialStart) / (1000 * 60 * 60 * 24));
+    return Math.max(0, TRIAL_DAYS - elapsed);
+  },
+  isExpired(trialStart, plan) {
+    if (plan && plan !== "starter") return false; // paid plan
+    return trial.getDaysLeft(trialStart) <= 0;
+  },
+  getStatus(trialStart, plan) {
+    if (plan && plan !== "starter") return { type: "paid", label: `Plan ${plan}`, color: T.accent };
+    const days = trial.getDaysLeft(trialStart);
+    if (days <= 0) return { type: "expired", label: "Essai expiré", color: T.red };
+    if (days <= 5) return { type: "warning", label: `${days}j restants`, color: T.gold };
+    return { type: "trial", label: `Essai — ${days}j restants`, color: T.blue };
+  }
+};
 const fmt = (n) => Number(n || 0).toLocaleString("fr-FR") + " FCFA";
 const genRef = () => `FAC-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
 
@@ -75,7 +97,21 @@ const auth = {
     if (!res.ok) throw new Error("Session expirée");
     return res.json();
   },
-  saveSession(data, company, plan) { try { localStorage.setItem(SESSION_KEY, JSON.stringify({ token: data.access_token, refresh_token: data.refresh_token, user: data.user, company: company || "Mon Entreprise", plan: plan || "starter", expires_at: Date.now() + (data.expires_in * 1000) })); } catch (e) {} },
+  saveSession(data, company, plan, trialStart) { 
+    try { 
+      const existing = auth.loadSession();
+      const ts = trialStart || existing?.trial_start || Date.now();
+      localStorage.setItem(SESSION_KEY, JSON.stringify({ 
+        token: data.access_token, 
+        refresh_token: data.refresh_token, 
+        user: data.user, 
+        company: company || "Mon Entreprise", 
+        plan: plan || "starter", 
+        trial_start: ts,
+        expires_at: Date.now() + (data.expires_in * 1000) 
+      })); 
+    } catch (e) {} 
+  },
   loadSession() { try { const r = localStorage.getItem(SESSION_KEY); return r ? JSON.parse(r) : null; } catch (e) { return null; } },
   clearSession() { try { localStorage.removeItem(SESSION_KEY); } catch (e) {} },
 };
@@ -147,45 +183,162 @@ async function createEcritures(ref, clientNom, ht, tva, ttc, userId, token) {
 }
 
 /* ─── PDF ─── */
-function generatePDF(facture, company) {
+/* ─── REAL PDF GENERATOR (jsPDF) ─── */
+async function loadJsPDF() {
+  if (window.jspdf) return window.jspdf.jsPDF;
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+    script.onload = () => resolve(window.jspdf.jsPDF);
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
+async function generatePDF(facture, company) {
   const co = company || DEFAULT_COMPANY;
-  const ht = facture.montant_ht || 0, tva = facture.tva_montant || Math.round(ht * 0.18), ttc = facture.montant_ttc || ht + tva;
+  const ht = facture.montant_ht || 0;
+  const tva = facture.tva_montant || Math.round(ht * 0.18);
+  const ttc = facture.montant_ttc || ht + tva;
   const date = new Date(facture.created_at || Date.now()).toLocaleDateString("fr-FR");
   const echeance = facture.date_echeance ? new Date(facture.date_echeance).toLocaleDateString("fr-FR") : "30 jours";
-  const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"/><title>Facture ${facture.reference}</title>
-<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:13px;color:#1a1a2e;padding:40px}
-.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:40px;padding-bottom:24px;border-bottom:3px solid #00C48C}
-.logo{font-size:22px;font-weight:900;color:#00C48C}.co{font-size:11px;color:#666;margin-top:6px;line-height:1.6}
-.inv-title{text-align:right}.inv-title h1{font-size:28px;font-weight:900;color:#1a1a2e}.inv-ref{color:#00C48C;font-size:14px;font-weight:700;margin-top:4px}
-.inv-date{color:#666;font-size:12px;margin-top:4px}.parties{display:flex;justify-content:space-between;margin-bottom:36px;gap:40px}
-.party{flex:1}.party-label{font-size:10px;font-weight:700;color:#999;letter-spacing:0.15em;text-transform:uppercase;margin-bottom:8px}
-.party-name{font-size:16px;font-weight:800;color:#1a1a2e;margin-bottom:4px}.party-detail{font-size:11px;color:#666;line-height:1.6}
-table{width:100%;border-collapse:collapse;margin-bottom:24px}thead tr{background:#1a1a2e;color:white}
-thead th{padding:10px 14px;text-align:left;font-size:11px;font-weight:700}tbody tr{border-bottom:1px solid #f0f0f0}
-tbody td{padding:12px 14px;font-size:12px}.totals{display:flex;justify-content:flex-end;margin-bottom:36px}
-.totals-box{width:280px}.total-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0f0f0;font-size:13px}
-.total-final{background:#00C48C;color:white;padding:12px 16px;border-radius:8px;margin-top:8px;font-weight:900;font-size:15px;display:flex;justify-content:space-between}
-.footer{border-top:1px solid #f0f0f0;padding-top:16px;font-size:10px;color:#999;text-align:center;line-height:1.6}
-.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;background:${facture.statut === "payée" ? "#e8f9f2" : "#fff8e1"};color:${facture.statut === "payée" ? "#00C48C" : "#F5A623"}}
-</style></head><body>
-<div class="header"><div><div class="logo">${co.nom}</div><div class="co">${co.adresse}<br/>${co.telephone ? `Tél : ${co.telephone}<br/>` : ""}${co.email ? `Email : ${co.email}<br/>` : ""}${co.rccm ? `RCCM : ${co.rccm}<br/>` : ""}${co.tva ? `N° TVA : ${co.tva}` : ""}</div></div>
-<div class="inv-title"><h1>FACTURE</h1><div class="inv-ref">${facture.reference}</div><div class="inv-date">Date : ${date}</div><div class="inv-date">Échéance : ${echeance}</div><div style="margin-top:8px"><span class="badge">${(facture.statut || "").toUpperCase()}</span></div></div></div>
-<div class="parties"><div class="party"><div class="party-label">Émetteur</div><div class="party-name">${co.nom}</div><div class="party-detail">${co.adresse}<br/>${co.email || ""}<br/>${co.regime}</div></div>
-<div class="party" style="text-align:right"><div class="party-label">Client</div><div class="party-name">${facture.client_nom}</div><div class="party-detail">Lomé, Togo</div></div></div>
-<table><thead><tr><th>Description</th><th style="text-align:right">Qté</th><th style="text-align:right">Prix HT</th><th style="text-align:right">Montant HT</th></tr></thead>
-<tbody><tr><td>${facture.description || "Prestation de services"}</td><td style="text-align:right">1</td><td style="text-align:right">${ht.toLocaleString("fr-FR")} FCFA</td><td style="text-align:right">${ht.toLocaleString("fr-FR")} FCFA</td></tr></tbody></table>
-<div class="totals"><div class="totals-box"><div class="total-row"><span style="color:#666">Montant HT</span><span>${ht.toLocaleString("fr-FR")} FCFA</span></div><div class="total-row"><span style="color:#666">TVA 18%</span><span>${tva.toLocaleString("fr-FR")} FCFA</span></div>
-<div class="total-final"><span>TOTAL TTC</span><span>${ttc.toLocaleString("fr-FR")} FCFA</span></div></div></div>
-<div style="background:#f8f9ff;border:1px solid #e8e9f0;border-radius:8px;padding:16px;margin-bottom:24px">
-<div style="font-size:11px;font-weight:700;color:#999;letter-spacing:0.15em;margin-bottom:8px">MODALITÉS DE PAIEMENT</div>
-<div style="font-size:12px;color:#444;line-height:1.6">Règlement par virement, Mobile Money ou chèque.<br/>Échéance : ${echeance} — Pénalités : 1,5%/mois.<br/>Référence : <strong>${facture.reference}</strong></div></div>
-<div class="footer">${co.nom} — ${co.adresse}${co.rccm ? ` — RCCM : ${co.rccm}` : ""}${co.tva ? ` — N° TVA : ${co.tva}` : ""}<br/>Généré par NeoERP AI — neoerp-ai.vercel.app</div>
-</body></html>`;
-  const blob = new Blob([html], { type: "text/html" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = `${facture.reference}.html`; a.click();
-  URL.revokeObjectURL(url);
+
+  try {
+    const JsPDF = await loadJsPDF();
+    const doc = new JsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+
+    // Colors
+    const green = [0, 196, 140];
+    const dark = [26, 26, 46];
+    const gray = [100, 100, 100];
+    const lightGray = [240, 240, 240];
+
+    // Header bar
+    doc.setFillColor(...green);
+    doc.rect(0, 0, 210, 35, "F");
+
+    // Company name
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(18);
+    doc.setFont("helvetica", "bold");
+    doc.text(co.nom, 14, 14);
+
+    // Company info
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "normal");
+    const coInfo = [co.adresse, co.telephone, co.email, co.rccm ? `RCCM: ${co.rccm}` : "", co.tva ? `TVA: ${co.tva}` : ""].filter(Boolean);
+    coInfo.forEach((line, i) => doc.text(line, 14, 20 + i * 4));
+
+    // FACTURE title
+    doc.setFontSize(22);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(255, 255, 255);
+    doc.text("FACTURE", 196, 14, { align: "right" });
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.text(facture.reference, 196, 20, { align: "right" });
+    doc.text(`Date: ${date}`, 196, 25, { align: "right" });
+    doc.text(`Échéance: ${echeance}`, 196, 30, { align: "right" });
+
+    // Client section
+    doc.setTextColor(...dark);
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.text("FACTURÉ À", 14, 48);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(12);
+    doc.text(facture.client_nom, 14, 55);
+    doc.setFontSize(9);
+    doc.setTextColor(...gray);
+    doc.text("Lomé, Togo", 14, 61);
+
+    // Status badge
+    const statusColor = facture.statut === "payée" ? green : [245, 166, 35];
+    doc.setFillColor(...statusColor);
+    doc.roundedRect(150, 44, 46, 10, 3, 3, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "bold");
+    doc.text((facture.statut || "").toUpperCase(), 173, 50.5, { align: "center" });
+
+    // Table header
+    doc.setFillColor(...dark);
+    doc.rect(14, 72, 182, 9, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "bold");
+    doc.text("DESCRIPTION", 18, 78);
+    doc.text("QTÉ", 130, 78, { align: "right" });
+    doc.text("PRIX HT", 160, 78, { align: "right" });
+    doc.text("MONTANT HT", 196, 78, { align: "right" });
+
+    // Table row
+    doc.setFillColor(...lightGray);
+    doc.rect(14, 81, 182, 10, "F");
+    doc.setTextColor(...dark);
+    doc.setFont("helvetica", "normal");
+    doc.text(facture.description || "Prestation de services", 18, 88);
+    doc.text("1", 130, 88, { align: "right" });
+    doc.text(`${ht.toLocaleString("fr-FR")} FCFA`, 160, 88, { align: "right" });
+    doc.text(`${ht.toLocaleString("fr-FR")} FCFA`, 196, 88, { align: "right" });
+
+    // Totals
+    let y = 105;
+    doc.setFontSize(9);
+    doc.setTextColor(...gray);
+    doc.text("Montant HT:", 140, y);
+    doc.setTextColor(...dark);
+    doc.text(`${ht.toLocaleString("fr-FR")} FCFA`, 196, y, { align: "right" });
+
+    y += 8;
+    doc.setTextColor(...gray);
+    doc.text("TVA 18%:", 140, y);
+    doc.setTextColor(...dark);
+    doc.text(`${tva.toLocaleString("fr-FR")} FCFA`, 196, y, { align: "right" });
+
+    // Total TTC box
+    y += 6;
+    doc.setFillColor(...green);
+    doc.roundedRect(130, y, 66, 12, 2, 2, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text("TOTAL TTC:", 134, y + 8);
+    doc.text(`${ttc.toLocaleString("fr-FR")} FCFA`, 194, y + 8, { align: "right" });
+
+    // Payment info
+    y += 22;
+    doc.setFillColor(248, 249, 255);
+    doc.rect(14, y, 182, 22, "F");
+    doc.setTextColor(...dark);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.text("MODALITÉS DE PAIEMENT", 18, y + 7);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(...gray);
+    doc.text(`Virement bancaire, Mobile Money ou chèque — Échéance: ${echeance}`, 18, y + 13);
+    doc.text(`Référence à rappeler: ${facture.reference} — Pénalités de retard: 1,5%/mois`, 18, y + 19);
+
+    // Footer
+    doc.setFillColor(...dark);
+    doc.rect(0, 275, 210, 22, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(7);
+    doc.setFont("helvetica", "normal");
+    doc.text(`${co.nom} — ${co.adresse}${co.rccm ? ` — RCCM: ${co.rccm}` : ""}${co.tva ? ` — TVA: ${co.tva}` : ""}`, 105, 281, { align: "center" });
+    doc.setTextColor(...green);
+    doc.text("Généré par NeoERP AI — neoerp-ai.vercel.app", 105, 287, { align: "center" });
+
+    doc.save(`${facture.reference}.pdf`);
+  } catch (e) {
+    // Fallback to HTML if jsPDF fails
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>${facture.reference}</title></head><body style="font-family:Arial;padding:40px"><h1>${co.nom}</h1><h2>FACTURE ${facture.reference}</h2><p>Client: ${facture.client_nom}</p><p>HT: ${ht.toLocaleString("fr-FR")} FCFA</p><p>TVA 18%: ${tva.toLocaleString("fr-FR")} FCFA</p><p><strong>TTC: ${ttc.toLocaleString("fr-FR")} FCFA</strong></p></body></html>`;
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `${facture.reference}.html`; a.click();
+    URL.revokeObjectURL(url);
+  }
 }
 
 /* ─── CHARTS ─── */
@@ -222,7 +375,7 @@ function LineChart({ data, color, height = 80, title }) {
         <defs>
           <linearGradient id={`lg${color.slice(1)}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={color} stopOpacity="0.3" />
-                  <stop offset="100%" stopColor={color} stopOpacity="0" />
+            <stop offset="100%" stopColor={color} stopOpacity="0" />
           </linearGradient>
         </defs>
         <polygon points={`0,${height} ${pts.join(" ")} 100,${height}`} fill={`url(#lg${color.slice(1)})`} />
@@ -446,7 +599,7 @@ function Dashboard({ token, userId, onNavigate, refreshKey, plan, company }) {
 
   return (
     <div style={{ padding: 18, height: "100%", overflowY: "auto" }}>
-                     {/* Header */}
+      {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
         <div style={{ flex: 1 }}>
           <div style={{ color: T.text, fontSize: 16, fontWeight: 800 }}>Bonjour 👋</div>
@@ -610,7 +763,32 @@ async function runAI(msg, history, onStatus, token, userId) {
   const res = await fetch("/api/ai", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 800, system: `Tu es NeoERP AI Agent — ERP autonome SYSCOHADA PME africaines. TOOLS sur une ligne TOOL:{json}: creer_client, creer_facture, lister_factures, lister_clients, analyser_tresorerie, enregistrer_operation, statistiques. Réponds en français. Montants FCFA.`, messages: [...history, { role: "user", content: msg }] }),
+    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1500, system: `Tu es NeoERP AI — Assistant financier intelligent pour PME africaines (SYSCOHADA/UEMOA).
+
+Tu as accès à des OUTILS. Pour les utiliser, réponds sur UNE SEULE LIGNE avec: TOOL:{"tool":"nom_outil","params":{...}}
+
+OUTILS DISPONIBLES:
+- creer_client: params {nom, email?, telephone?}
+- creer_facture: params {client_nom, montant_ht, description?, date_echeance?}
+- lister_factures: params {statut?} (statut: "payée"|"impayée"|null)
+- lister_clients: params {}
+- analyser_tresorerie: params {}
+- enregistrer_operation: params {type, montant, description?, categorie?}
+- statistiques: params {}
+
+CAPACITÉS D'ANALYSE PROACTIVE:
+Quand on te demande l'état de l'entreprise ou une analyse, tu dois:
+1. D'abord appeler l'outil "statistiques" pour obtenir les données
+2. Ensuite analyser et donner des recommandations concrètes
+3. Alerter sur les risques (trésorerie négative, impayés élevés, etc.)
+4. Proposer des actions correctives spécifiques
+
+EXEMPLES DE RÉPONSES INTELLIGENTES:
+- Si impayés > 30% du CA: "⚠ Vos impayés représentent X% de votre CA. Je recommande d'envoyer des relances immédiatement."
+- Si trésorerie < 0: "🚨 Votre trésorerie est négative. Priorité: encaisser les factures impayées."
+- Si aucune facture ce mois: "📊 Aucune facture ce mois. Avez-vous des devis en cours à convertir?"
+
+Réponds TOUJOURS en français. Montants en FCFA. Sois précis, actionnable et proactif.`, messages: [...history, { role: "user", content: msg }] }),
   });
   if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error?.message || "Erreur IA"); }
   const data = await res.json();
@@ -670,7 +848,7 @@ function FacturesModule({ token, userId, toast, refreshKey, company }) {
   const load = async () => { setLoading(true); try { const d = await db.query("factures", { select: "*", order: "created_at.desc" }, token); setFactures(Array.isArray(d) ? d : []); } catch (e) { toast(e.message, "error"); } setLoading(false); };
   useEffect(() => { load(); }, [refreshKey]);
   const save = async () => {
-            const e = validate.facture(form); if (e) return toast(e, "error");
+    const e = validate.facture(form); if (e) return toast(e, "error");
     try {
       const ht = Math.round(Number(form.montant_ht)), tva = Math.round(ht * 0.18), ttc = ht + tva, ref = genRef();
       await db.insert("factures", { reference: ref, client_nom: form.client_nom.trim(), montant_ht: ht, tva_rate: 18, tva_montant: tva, montant_ttc: ttc, statut: "impayée", description: form.description || null, date_echeance: form.date_echeance || null, user_id: userId }, token);
@@ -806,7 +984,95 @@ function LandingPage({ onGetStarted }) {
   return (
     <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", background: T.bg, color: T.text, minHeight: "100vh", overflowY: "auto" }}>
       <style>{`* { box-sizing: border-box; margin: 0; padding: 0; }`}</style>
-      <nav style={{ position: "sticky", top: 0, background: `${T.bg}EE`, backdropFilter: "blur(12px)", borderBottom: `1px solid ${T.border}`, padding: "function UpgradeModule({ email, company }) {
+      <nav style={{ position: "sticky", top: 0, background: `${T.bg}EE`, backdropFilter: "blur(12px)", borderBottom: `1px solid ${T.border}`, padding: "12px 20px", display: "flex", alignItems: "center", gap: 12, zIndex: 50 }}>
+        <div style={{ width: 28, height: 28, borderRadius: 8, background: `linear-gradient(135deg, ${T.accent}, #009970)`, display: "flex", alignItems: "center", justifyContent: "center", color: T.bg, fontWeight: 900, fontSize: 13 }}>N</div>
+        <div style={{ color: T.text, fontWeight: 800, fontSize: 14 }}>NeoERP AI</div>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          <button onClick={() => onGetStarted("login")} style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 8, padding: "7px 14px", color: T.sub, fontSize: 12, cursor: "pointer", fontWeight: 600 }}>Se connecter</button>
+          <button onClick={() => onGetStarted("register")} style={{ background: T.accent, border: "none", borderRadius: 8, padding: "7px 14px", color: T.bg, fontSize: 12, cursor: "pointer", fontWeight: 700 }}>Essai gratuit</button>
+        </div>
+      </nav>
+      <div style={{ padding: "60px 20px 40px", textAlign: "center", maxWidth: 600, margin: "0 auto" }}>
+        <div style={{ background: T.accentDim, border: `1px solid ${T.accentBorder}`, borderRadius: 20, padding: "4px 14px", display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 20 }}>
+          <div style={{ width: 6, height: 6, borderRadius: "50%", background: T.accent }} />
+          <span style={{ color: T.accent, fontSize: 11, fontWeight: 700 }}>ERP IA · SYSCOHADA · PME Afrique</span>
+        </div>
+        <h1 style={{ fontSize: 30, fontWeight: 900, lineHeight: 1.2, marginBottom: 16, letterSpacing: "-0.03em" }}>Dirigez votre entreprise<br /><span style={{ color: T.accent }}>avec l'intelligence artificielle</span></h1>
+        <p style={{ color: T.sub, fontSize: 14, lineHeight: 1.7, marginBottom: 28 }}>Le premier ERP autonome pour PME africaines. Facturez, gérez votre comptabilité SYSCOHADA et pilotez votre trésorerie en langage naturel.</p>
+        <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+          <button onClick={() => onGetStarted("register")} style={{ background: T.accent, border: "none", borderRadius: 10, padding: "13px 24px", color: T.bg, fontWeight: 800, fontSize: 14, cursor: "pointer" }}>Démarrer gratuitement →</button>
+          <button onClick={() => onGetStarted("login")} style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 10, padding: "13px 24px", color: T.text, fontWeight: 600, fontSize: 14, cursor: "pointer" }}>Se connecter</button>
+        </div>
+        <div style={{ color: T.dim, fontSize: 11, marginTop: 14 }}>✓ 14 jours gratuits · ✓ Sans carte bancaire · ✓ FCFA & SYSCOHADA</div>
+      </div>
+      <div style={{ padding: "0 20px 40px", maxWidth: 600, margin: "0 auto" }}>
+        <div style={{ textAlign: "center", marginBottom: 24 }}><h2 style={{ fontSize: 20, fontWeight: 900 }}>Tout ce dont votre PME a besoin</h2></div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          {features.map((f, i) => <div key={i} style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 11, padding: "13px 13px" }}><div style={{ fontSize: 18, marginBottom: 7 }}>{f.icon}</div><div style={{ color: T.text, fontWeight: 700, fontSize: 13, marginBottom: 3 }}>{f.title}</div><div style={{ color: T.sub, fontSize: 11, lineHeight: 1.5 }}>{f.desc}</div></div>)}
+        </div>
+      </div>
+      <div style={{ padding: "0 20px 50px", maxWidth: 600, margin: "0 auto" }}>
+        <div style={{ textAlign: "center", marginBottom: 24 }}><h2 style={{ fontSize: 20, fontWeight: 900 }}>Tarifs simples</h2><p style={{ color: T.sub, fontSize: 12, marginTop: 6 }}>En FCFA · Sans engagement</p></div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {PLANS.map((plan) => (
+            <div key={plan.id} style={{ background: plan.popular ? T.accentDim : T.s2, border: `2px solid ${plan.popular ? T.accent : T.border}`, borderRadius: 12, padding: "16px", position: "relative" }}>
+              {plan.popular && <div style={{ position: "absolute", top: -10, right: 14, background: T.accent, color: T.bg, borderRadius: 20, padding: "2px 10px", fontSize: 9, fontWeight: 800 }}>POPULAIRE</div>}
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+                <div><div style={{ color: plan.color, fontWeight: 800, fontSize: 15 }}>{plan.name}</div><div style={{ color: T.sub, fontSize: 11 }}>{plan.desc}</div></div>
+                <div style={{ textAlign: "right" }}><div style={{ color: T.text, fontWeight: 900, fontSize: 18 }}>{plan.price.toLocaleString("fr-FR")} <span style={{ fontSize: 10, color: T.sub, fontWeight: 400 }}>FCFA/mois</span></div></div>
+              </div>
+              <div style={{ marginBottom: 12 }}>{plan.features.map((f, i) => <div key={i} style={{ display: "flex", gap: 6, padding: "3px 0", fontSize: 11, color: T.sub }}><span style={{ color: plan.color }}>✓</span> {f}</div>)}</div>
+              <button onClick={() => setPayingPlan(plan)} style={{ width: "100%", background: plan.popular ? T.accent : T.s3, border: `1px solid ${plan.popular ? T.accent : T.border}`, borderRadius: 8, padding: "10px", color: plan.popular ? T.bg : T.text, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{plan.cta}{plan.trial ? " — 14 jours gratuits" : ""}</button>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{ borderTop: `1px solid ${T.border}`, padding: "16px 20px", textAlign: "center" }}>
+        <div style={{ color: T.dim, fontSize: 11 }}>© 2026 NeoERP AI — NeoTech Solutions — Lomé, Togo · SYSCOHADA · UEMOA</div>
+      </div>
+      {payingPlan && <PaymentModal plan={payingPlan} onClose={() => setPayingPlan(null)} onSuccess={() => setPayingPlan(null)} />}
+    </div>
+  );
+}
+
+/* ─── AUTH SCREEN ─── */
+function AuthScreen({ onAuth, defaultMode = "login" }) {
+  const [mode, setMode] = useState(defaultMode); const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [company, setCompany] = useState(""); const [loading, setLoading] = useState(false); const [error, setError] = useState("");
+  const submit = async () => {
+    if (!email || !password) return setError("Email et mot de passe obligatoires");
+    if (password.length < 6) return setError("Mot de passe minimum 6 caractères");
+    setLoading(true); setError("");
+    try {
+      if (mode === "register") { await auth.signUp(email, password); setMode("login"); setError("✓ Compte créé. Connectez-vous."); }
+      else { const r = await auth.signIn(email, password); const co = company || "Mon Entreprise"; auth.saveSession(r, co, "starter"); onAuth(r.access_token, r.refresh_token, r.user, co, "starter"); }
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  };
+  return (
+    <div style={{ height: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ width: "min(400px, 100%)" }}>
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{ width: 48, height: 48, borderRadius: 12, background: `linear-gradient(135deg, ${T.accent}, #009970)`, display: "flex", alignItems: "center", justifyContent: "center", color: T.bg, fontWeight: 900, fontSize: 20, margin: "0 auto 12px" }}>N</div>
+          <div style={{ color: T.text, fontSize: 20, fontWeight: 900 }}>NeoERP AI</div>
+          <div style={{ color: T.sub, fontSize: 12, marginTop: 3 }}>ERP intelligent · PME africaines · SYSCOHADA</div>
+        </div>
+        <div style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 14, padding: 20 }}>
+          <div style={{ display: "flex", marginBottom: 16, background: T.s3, borderRadius: 8, padding: 3 }}>{["login", "register"].map(m => <button key={m} onClick={() => { setMode(m); setError(""); }} style={{ flex: 1, background: mode === m ? T.accent : "none", border: "none", borderRadius: 6, padding: "7px", color: mode === m ? T.bg : T.sub, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{m === "login" ? "Se connecter" : "Créer un compte"}</button>)}</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+            {mode === "register" && <input value={company} onChange={e => setCompany(e.target.value)} placeholder="Nom de votre entreprise" style={{ background: T.s3, border: `1px solid ${T.border}`, borderRadius: 8, padding: "10px 13px", color: T.text, fontSize: 13, outline: "none" }} />}
+            <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" type="email" style={{ background: T.s3, border: `1px solid ${T.border}`, borderRadius: 8, padding: "10px 13px", color: T.text, fontSize: 13, outline: "none" }} />
+            <input value={password} onChange={e => setPassword(e.target.value)} placeholder="Mot de passe" type="password" onKeyDown={e => e.key === "Enter" && submit()} style={{ background: T.s3, border: `1px solid ${T.border}`, borderRadius: 8, padding: "10px 13px", color: T.text, fontSize: 13, outline: "none" }} />
+          </div>
+          {error && <div style={{ marginTop: 9, padding: "8px 11px", borderRadius: 7, background: error.startsWith("✓") ? T.accentDim : T.redDim, color: error.startsWith("✓") ? T.accent : T.red, fontSize: 12 }}>{error}</div>}
+          <button onClick={submit} disabled={loading} style={{ width: "100%", marginTop: 13, background: loading ? T.s3 : T.accent, border: "none", borderRadius: 8, padding: "12px", color: loading ? T.sub : T.bg, fontWeight: 800, fontSize: 14, cursor: loading ? "default" : "pointer" }}>{loading ? "Chargement…" : mode === "login" ? "Se connecter" : "Créer mon compte"}</button>
+          <div style={{ marginTop: 12, fontSize: 10, color: T.sub, textAlign: "center" }}>🔒 Données isolées · RLS · Session persistante</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UpgradeModule({ email, company }) {
   const [payingPlan, setPayingPlan] = useState(null);
   return (
     <div style={{ padding: 18, height: "100%", overflowY: "auto" }}>
@@ -1030,7 +1296,7 @@ function ComptabiliteModule({ token, userId, toast, company }) {
         setEcritures(Array.isArray(data) ? data : []);
       } catch (e) { toast(e.message, "error"); }
       setLoading(false);
-            };
+    };
     load();
   }, []);
 
@@ -1122,7 +1388,7 @@ const NAV = [
 ];
 
 /* ─── ROOT ─── */
-export default function NeoERPV13() {
+export default function NeoERPV14() {
   const [screen, setScreen] = useState("landing");
   const [authMode, setAuthMode] = useState("login");
   const [session, setSession] = useState(null);
@@ -1154,28 +1420,12 @@ export default function NeoERPV13() {
     }
   }, [session, refreshKey, screen]);
 
-  // Load company settings — auto-initialise si absent
+  // Load company settings
   useEffect(() => {
     if (session && screen === "app") {
-      companyDb.get(session.user?.id, session.token).then(async c => {
-        if (c) {
-          setCompanySettings(c);
-        } else {
-          // Première connexion — créer automatiquement les paramètres
-          const defaults = {
-            nom: session.company || "Mon Entreprise",
-            adresse: "Lomé, Togo",
-            telephone: "",
-            email: session.user?.email || "",
-            rccm: "",
-            tva: "",
-            regime: "Réel Simplifié — SYSCOHADA",
-          };
-          try {
-            await companyDb.upsert(session.user?.id, defaults, session.token);
-          } catch (e) {}
-          setCompanySettings({ ...DEFAULT_COMPANY, ...defaults });
-        }
+      companyDb.get(session.user?.id, session.token).then(c => {
+        if (c) setCompanySettings(c);
+        else setCompanySettings({ ...DEFAULT_COMPANY, nom: session.company || "Mon Entreprise" });
       }).catch(() => setCompanySettings({ ...DEFAULT_COMPANY, nom: session.company || "Mon Entreprise" }));
     }
   }, [session, screen]);
@@ -1183,7 +1433,12 @@ export default function NeoERPV13() {
   const showToast = (msg, type = "success") => setToast({ msg, type });
   const refresh = () => setRefreshKey(k => k + 1);
   const handleGetStarted = (mode) => { setAuthMode(mode); setScreen("auth"); };
-  const handleAuth = (token, refresh_token, user, company, plan) => { const s = { token, refresh_token, user, company, plan: plan || "starter", expires_at: Date.now() + 3600000 }; setSession(s); setScreen("app"); };
+  const handleAuth = (token, refresh_token, user, company, plan) => { 
+    const existing = auth.loadSession();
+    const trial_start = existing?.trial_start || Date.now();
+    const s = { token, refresh_token, user, company, plan: plan || "starter", trial_start, expires_at: Date.now() + 3600000 }; 
+    setSession(s); setScreen("app"); 
+  };
   const handleLogout = async () => { try { await auth.signOut(session.token); } catch (e) {} auth.clearSession(); setSession(null); setScreen("landing"); };
 
   if (sessionLoading) return <div style={{ height: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ textAlign: "center" }}><div style={{ width: 40, height: 40, borderRadius: 10, background: `linear-gradient(135deg, ${T.accent}, #009970)`, display: "flex", alignItems: "center", justifyContent: "center", color: T.bg, fontWeight: 900, fontSize: 18, margin: "0 auto 12px" }}>N</div><div style={{ color: T.sub, fontSize: 12 }}>Chargement…</div></div></div>;
@@ -1209,6 +1464,23 @@ export default function NeoERPV13() {
   };
 
   const impayeCount = factures.filter(f => f.statut !== "payée").length;
+  const trialStatus = trial.getStatus(session?.trial_start, session?.plan);
+  const trialExpired = trial.isExpired(session?.trial_start, session?.plan);
+
+  // If trial expired, show upgrade screen
+  if (trialExpired && screen === "app") {
+    return (
+      <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", background: T.bg, color: T.text, height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+        <div style={{ textAlign: "center", maxWidth: 400 }}>
+          <div style={{ width: 60, height: 60, borderRadius: 15, background: T.redDim, border: `1px solid ${T.red}30`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, margin: "0 auto 20px" }}>⏰</div>
+          <div style={{ color: T.red, fontSize: 20, fontWeight: 900, marginBottom: 10 }}>Essai gratuit expiré</div>
+          <div style={{ color: T.sub, fontSize: 14, marginBottom: 24, lineHeight: 1.7 }}>Vos 30 jours d'essai gratuit sont terminés. Choisissez un plan pour continuer à utiliser NeoERP AI.</div>
+          <button onClick={() => setView("upgrade")} style={{ background: T.accent, border: "none", borderRadius: 10, padding: "13px 28px", color: T.bg, fontWeight: 800, fontSize: 15, cursor: "pointer", marginBottom: 12, width: "100%" }}>Choisir un plan →</button>
+          <button onClick={handleLogout} style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 20px", color: T.sub, fontSize: 13, cursor: "pointer", width: "100%" }}>Se déconnecter</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", background: T.bg, color: T.text, height: "100vh", display: "flex", overflow: "hidden" }}>
@@ -1216,7 +1488,7 @@ export default function NeoERPV13() {
       <div style={{ width: collapsed ? 50 : 210, flexShrink: 0, background: T.s1, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column", transition: "width 0.22s", overflow: "hidden" }}>
         <div style={{ padding: "13px 11px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ width: 27, height: 27, borderRadius: 8, background: `linear-gradient(135deg, ${T.accent}, #009970)`, display: "flex", alignItems: "center", justifyContent: "center", color: T.bg, fontWeight: 900, fontSize: 12, flexShrink: 0 }}>N</div>
-          {!collapsed && (<><div><div style={{ color: T.text, fontWeight: 800, fontSize: 12 }}>NeoERP AI</div><div style={{ color: T.accent, fontSize: 9, fontWeight: 600 }}>● V13 · Auto company init</div></div><button onClick={() => setCollapsed(true)} style={{ marginLeft: "auto", background: "none", border: "none", color: T.dim, cursor: "pointer" }}>⇤</button></>)}
+          {!collapsed && (<><div><div style={{ color: T.text, fontWeight: 800, fontSize: 12 }}>NeoERP AI</div><div style={{ color: T.accent, fontSize: 9, fontWeight: 600 }}>● V14 · PDF · IA Pro</div></div><button onClick={() => setCollapsed(true)} style={{ marginLeft: "auto", background: "none", border: "none", color: T.dim, cursor: "pointer" }}>⇤</button></>)}
           {collapsed && <button onClick={() => setCollapsed(false)} style={{ background: "none", border: "none", color: T.dim, cursor: "pointer" }}>⇥</button>}
         </div>
         <nav style={{ flex: 1, padding: "7px 5px" }}>
@@ -1241,7 +1513,8 @@ export default function NeoERPV13() {
           <span style={{ color: T.sub, fontSize: 11, flex: 1 }}>{NAV.find(n => n.id === view)?.label}</span>
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <div style={{ width: 5, height: 5, borderRadius: "50%", background: T.accent, boxShadow: `0 0 5px ${T.accent}` }} />
-            <span style={{ color: T.sub, fontSize: 10 }}>V13 · Auto company init</span>
+            <span style={{ color: T.sub, fontSize: 10 }}>V14 · PDF · IA Pro</span>
+            <span style={{ background: trialStatus.color + "20", color: trialStatus.color, border: `1px solid ${trialStatus.color}40`, borderRadius: 10, padding: "2px 8px", fontSize: 9, fontWeight: 700, marginLeft: 6 }}>{trialStatus.label}</span>
           </div>
         </div>
         <div style={{ flex: 1, overflow: "hidden" }}>{renderView()}</div>
@@ -1249,5 +1522,4 @@ export default function NeoERPV13() {
       {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   );
-    }
-          
+}
