@@ -1,0 +1,27 @@
+{
+  "name": "NeoERP AI",
+  "short_name": "NeoERP",
+  "description": "ERP intelligent pour PME africaines — SYSCOHADA, Facturation, IA",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#070A0F",
+  "theme_color": "#00E5B0",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "finance", "productivity"],
+  "lang": "fr",
+  "scope": "/"
+}
