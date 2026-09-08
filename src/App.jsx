@@ -1,4 +1,3 @@
-        
 import { useState, useEffect, useRef } from "react";
 
 /* ─── CONFIG ─── */
@@ -1375,6 +1374,187 @@ function ComptabiliteModule({ token, userId, toast, company }) {
   );
 }
 
+/* ─── AMBASSADEUR MODULE ─── */
+function AmbassadeurModule({ token, userId, toast, session }) {
+  const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState({ nom: session?.company || "", telephone: "" });
+  const [copied, setCopied] = useState(false);
+
+  const NIVEAUX = [
+    { id: "Ambassadeur", min: 0, max: 5, color: T.blue, commission: 15, label: "Ambassadeur", icon: "★" },
+    { id: "Partenaire", min: 6, max: 20, color: T.accent, commission: 20, label: "Partenaire Certifié", icon: "★★" },
+    { id: "Distributeur", min: 21, max: 999, color: T.gold, commission: 25, label: "Distributeur Elite", icon: "★★★" },
+  ];
+
+  const genCode = (nom) => {
+    const base = nom.trim().toUpperCase().replace(/[^A-Z]/g, "").slice(0, 6);
+    const num = Math.floor(1000 + Math.random() * 9000);
+    return `${base}${num}`;
+  };
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const data = await db.query("ambassadeurs", { select: "*", filter: `user_id=eq.${userId}` }, token);
+        const list = Array.isArray(data) ? data : [];
+        if (list.length > 0) setProfile(list[0]);
+      } catch (e) {}
+      setLoading(false);
+    };
+    load();
+  }, []);
+
+  const createProfile = async () => {
+    if (!form.nom.trim()) return toast("Nom requis", "error");
+    setCreating(true);
+    try {
+      const code = genCode(form.nom);
+      const res = await db.insert("ambassadeurs", {
+        user_id: userId,
+        code,
+        nom: form.nom.trim(),
+        email: session?.user?.email || "",
+        telephone: form.telephone || "",
+        niveau: "Ambassadeur",
+        clients_amenes: 0,
+        commission_totale: 0,
+        actif: true,
+      }, token);
+      setProfile(Array.isArray(res) ? res[0] : res);
+      toast("Profil Ambassadeur créé ✓", "success");
+    } catch (e) { toast(e.message, "error"); }
+    setCreating(false);
+  };
+
+  const copyLink = () => {
+    const link = `https://neoerp-ai.vercel.app?ref=${profile.code}`;
+    navigator.clipboard.writeText(link).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      toast("Lien copié ✓", "success");
+    });
+  };
+
+  const shareWhatsApp = () => {
+    const link = `https://neoerp-ai.vercel.app?ref=${profile.code}`;
+    const msg = encodeURIComponent(`Bonjour ! Je vous recommande NeoERP AI — le logiciel de gestion pour PME africaines avec SYSCOHADA et Agent IA. 30 jours gratuits avec mon lien : ${link}`);
+    window.open(`https://wa.me/?text=${msg}`, "_blank");
+  };
+
+  const currentNiveau = profile ? NIVEAUX.find(n => profile.clients_amenes >= n.min && profile.clients_amenes <= n.max) || NIVEAUX[0] : NIVEAUX[0];
+  const nextNiveau = NIVEAUX[NIVEAUX.indexOf(currentNiveau) + 1];
+
+  if (loading) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: T.sub, fontSize: 12 }}>Chargement…</div>;
+
+  if (!profile) return (
+    <div style={{ padding: 18, height: "100%", overflowY: "auto" }}>
+      <div style={{ color: T.sub, fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", marginBottom: 4 }}>★ PROGRAMME</div>
+      <div style={{ color: T.text, fontSize: 17, fontWeight: 800, marginBottom: 16 }}>Devenir Ambassadeur</div>
+
+      <div style={{ background: `linear-gradient(135deg, ${T.accentDim}, ${T.s2})`, border: `1px solid ${T.accentBorder}`, borderRadius: 14, padding: 20, marginBottom: 20 }}>
+        <div style={{ color: T.accent, fontSize: 16, fontWeight: 900, marginBottom: 8 }}>Gagnez en recommandant NeoERP</div>
+        <div style={{ color: T.sub, fontSize: 13, lineHeight: 1.7, marginBottom: 16 }}>Recommandez NeoERP AI à des PME togolaises et recevez une commission mensuelle pour chaque client actif.</div>
+        {NIVEAUX.map((n, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < NIVEAUX.length - 1 ? `1px solid ${T.border}` : "none" }}>
+            <div style={{ color: n.color, fontWeight: 700, minWidth: 30 }}>{n.icon}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ color: T.text, fontSize: 12, fontWeight: 700 }}>{n.label}</div>
+              <div style={{ color: T.sub, fontSize: 10 }}>{n.min === 0 ? `0 à ${n.max}` : `${n.min} à ${n.max === 999 ? "∞" : n.max}`} clients amenés</div>
+            </div>
+            <div style={{ color: n.color, fontWeight: 800, fontSize: 14 }}>{n.commission}%</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 12, padding: 18 }}>
+        <div style={{ color: T.text, fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Créer mon profil Ambassadeur</div>
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ color: T.sub, fontSize: 11, marginBottom: 5 }}>Votre nom ou nom de votre cabinet *</div>
+          <input value={form.nom} onChange={e => setForm(p => ({ ...p, nom: e.target.value }))} placeholder="Ex: Cabinet FIOA" style={{ width: "100%", background: T.s3, border: `1px solid ${T.border}`, borderRadius: 8, padding: "10px 13px", color: T.text, fontSize: 13, outline: "none" }} />
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ color: T.sub, fontSize: 11, marginBottom: 5 }}>Téléphone WhatsApp</div>
+          <input value={form.telephone} onChange={e => setForm(p => ({ ...p, telephone: e.target.value }))} placeholder="+228 90 00 00 00" style={{ width: "100%", background: T.s3, border: `1px solid ${T.border}`, borderRadius: 8, padding: "10px 13px", color: T.text, fontSize: 13, outline: "none" }} />
+        </div>
+        <button onClick={createProfile} disabled={creating} style={{ width: "100%", background: creating ? T.s3 : T.accent, border: "none", borderRadius: 9, padding: "12px", color: creating ? T.sub : T.bg, fontWeight: 800, fontSize: 14, cursor: creating ? "default" : "pointer" }}>
+          {creating ? "Création…" : "Devenir Ambassadeur →"}
+        </button>
+      </div>
+    </div>
+  );
+
+  const mrr = profile.clients_amenes * 15000 * (currentNiveau.commission / 100);
+
+  return (
+    <div style={{ padding: 18, height: "100%", overflowY: "auto" }}>
+      <div style={{ color: T.sub, fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", marginBottom: 4 }}>★ AMBASSADEUR</div>
+      <div style={{ color: T.text, fontSize: 17, fontWeight: 800, marginBottom: 16 }}>Mon espace Ambassadeur</div>
+
+      {/* Niveau badge */}
+      <div style={{ background: `linear-gradient(135deg, ${currentNiveau.color}15, ${T.s2})`, border: `1px solid ${currentNiveau.color}30`, borderRadius: 14, padding: 18, marginBottom: 16, display: "flex", alignItems: "center", gap: 14 }}>
+        <div style={{ width: 50, height: 50, borderRadius: 12, background: currentNiveau.color + "20", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, color: currentNiveau.color, fontWeight: 900 }}>{currentNiveau.icon}</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ color: currentNiveau.color, fontSize: 16, fontWeight: 900 }}>{currentNiveau.label}</div>
+          <div style={{ color: T.sub, fontSize: 12, marginTop: 2 }}>Commission : {currentNiveau.commission}% par client/mois</div>
+          {nextNiveau && <div style={{ color: T.dim, fontSize: 11, marginTop: 4 }}>→ {nextNiveau.label} à {nextNiveau.min} clients ({nextNiveau.min - profile.clients_amenes} de plus)</div>}
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ color: currentNiveau.color, fontSize: 22, fontWeight: 900 }}>{profile.clients_amenes}</div>
+          <div style={{ color: T.sub, fontSize: 10 }}>clients amenés</div>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 16 }}>
+        {[
+          { label: "Clients actifs", val: profile.clients_amenes, color: T.accent },
+          { label: "Commission/mois", val: fmtShort(mrr) + " F", color: T.gold },
+          { label: "Total gagné", val: fmtShort(profile.commission_totale) + " F", color: T.blue },
+        ].map((k, i) => (
+          <div key={i} style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 10, padding: "12px 11px" }}>
+            <div style={{ color: T.sub, fontSize: 10, marginBottom: 4 }}>{k.label}</div>
+            <div style={{ color: k.color, fontSize: 16, fontWeight: 800 }}>{k.val}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Code & Link */}
+      <div style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 12, padding: 16, marginBottom: 14 }}>
+        <div style={{ color: T.sub, fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", marginBottom: 10 }}>MON CODE PARRAIN</div>
+        <div style={{ background: T.s3, border: `1px solid ${T.accentBorder}`, borderRadius: 9, padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+          <div style={{ color: T.accent, fontSize: 22, fontWeight: 900, letterSpacing: "0.1em" }}>{profile.code}</div>
+          <button onClick={copyLink} style={{ background: copied ? T.accentDim : T.s2, border: `1px solid ${copied ? T.accent : T.border}`, borderRadius: 7, padding: "6px 12px", color: copied ? T.accent : T.sub, fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
+            {copied ? "✓ Copié" : "📋 Copier lien"}
+          </button>
+        </div>
+        <div style={{ color: T.dim, fontSize: 11, marginBottom: 12 }}>Lien : https://neoerp-ai.vercel.app?ref={profile.code}</div>
+        <button onClick={shareWhatsApp} style={{ width: "100%", background: "#25D36620", border: "1px solid #25D36640", borderRadius: 9, padding: "11px", color: "#25D366", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+          💬 Partager sur WhatsApp
+        </button>
+      </div>
+
+      {/* How it works */}
+      <div style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 12, padding: 16 }}>
+        <div style={{ color: T.sub, fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", marginBottom: 12 }}>COMMENT ÇA MARCHE</div>
+        {[
+          { num: "1", text: "Partagez votre lien unique avec des PME togolaises" },
+          { num: "2", text: "Elles s'inscrivent sur NeoERP avec votre code" },
+          { num: "3", text: "Dès qu'elles s'abonnent, vous recevez votre commission" },
+          { num: "4", text: "Commission versée chaque mois par Mobile Money" },
+        ].map((s, i) => (
+          <div key={i} style={{ display: "flex", gap: 12, padding: "8px 0", borderBottom: i < 3 ? `1px solid ${T.border}` : "none" }}>
+            <div style={{ width: 24, height: 24, borderRadius: "50%", background: T.accent, color: T.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 12, flexShrink: 0 }}>{s.num}</div>
+            <div style={{ color: T.text, fontSize: 12, lineHeight: 1.6, paddingTop: 3 }}>{s.text}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ─── NAV ─── */
 const NAV = [
   { id: "dashboard", icon: "⬡", label: "Tableau de bord" },
@@ -1384,11 +1564,12 @@ const NAV = [
   { id: "tresorerie", icon: "◈", label: "Trésorerie" },
   { id: "reminders", icon: "⚡", label: "Relances" },
   { id: "comptabilite", icon: "📚", label: "Comptabilité" },
+  { id: "ambassadeur", icon: "★", label: "Ambassadeur" },
   { id: "settings", icon: "⚙", label: "Paramètres" },
 ];
 
 /* ─── ROOT ─── */
-export default function NeoERPV14() {
+export default function NeoERPV15() {
   const [screen, setScreen] = useState("landing");
   const [authMode, setAuthMode] = useState("login");
   const [session, setSession] = useState(null);
@@ -1420,12 +1601,38 @@ export default function NeoERPV14() {
     }
   }, [session, refreshKey, screen]);
 
-  // Load company settings
+  // Load company settings + sync plan from Supabase
   useEffect(() => {
     if (session && screen === "app") {
-      companyDb.get(session.user?.id, session.token).then(c => {
-        if (c) setCompanySettings(c);
-        else setCompanySettings({ ...DEFAULT_COMPANY, nom: session.company || "Mon Entreprise" });
+      companyDb.get(session.user?.id, session.token).then(async c => {
+        if (c) {
+          setCompanySettings(c);
+          // Sync plan from Supabase to session if different
+          if (c.plan && c.plan_active && c.plan !== session.plan) {
+            setSession(s => ({ ...s, plan: c.plan }));
+            auth.saveSession(
+              { access_token: session.token, refresh_token: session.refresh_token, user: session.user, expires_in: 3600 },
+              session.company,
+              c.plan,
+              session.trial_start
+            );
+          }
+        } else {
+          // First login — auto-create company settings
+          const defaults = {
+            nom: session.company || "Mon Entreprise",
+            adresse: "Lomé, Togo",
+            telephone: "",
+            email: session.user?.email || "",
+            rccm: "",
+            tva: "",
+            regime: "Réel Simplifié — SYSCOHADA",
+            plan: "starter",
+            plan_active: false,
+          };
+          try { await companyDb.upsert(session.user?.id, defaults, session.token); } catch (e) {}
+          setCompanySettings({ ...DEFAULT_COMPANY, ...defaults });
+        }
       }).catch(() => setCompanySettings({ ...DEFAULT_COMPANY, nom: session.company || "Mon Entreprise" }));
     }
   }, [session, screen]);
@@ -1458,6 +1665,7 @@ export default function NeoERPV14() {
       case "reminders": return <RemindersModule factures={factures} token={session.token} userId={session.user?.id} toast={showToast} />;
       case "upgrade": return <UpgradeModule email={session.user?.email} company={session.company} />;
       case "comptabilite": return <ComptabiliteModule token={session.token} userId={session.user?.id} toast={showToast} company={companySettings} />;
+      case "ambassadeur": return <AmbassadeurModule token={session.token} userId={session.user?.id} toast={showToast} session={session} />;
       case "settings": return <CompanySettingsModule token={session.token} userId={session.user?.id} toast={showToast} company={companySettings} onUpdate={setCompanySettings} />;
       default: return <Dashboard {...props} onNavigate={setView} plan={session.plan} company={session.company} />;
     }
@@ -1488,7 +1696,7 @@ export default function NeoERPV14() {
       <div style={{ width: collapsed ? 50 : 210, flexShrink: 0, background: T.s1, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column", transition: "width 0.22s", overflow: "hidden" }}>
         <div style={{ padding: "13px 11px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ width: 27, height: 27, borderRadius: 8, background: `linear-gradient(135deg, ${T.accent}, #009970)`, display: "flex", alignItems: "center", justifyContent: "center", color: T.bg, fontWeight: 900, fontSize: 12, flexShrink: 0 }}>N</div>
-          {!collapsed && (<><div><div style={{ color: T.text, fontWeight: 800, fontSize: 12 }}>NeoERP AI</div><div style={{ color: T.accent, fontSize: 9, fontWeight: 600 }}>● V14 · PDF · IA Pro</div></div><button onClick={() => setCollapsed(true)} style={{ marginLeft: "auto", background: "none", border: "none", color: T.dim, cursor: "pointer" }}>⇤</button></>)}
+          {!collapsed && (<><div><div style={{ color: T.text, fontWeight: 800, fontSize: 12 }}>NeoERP AI</div><div style={{ color: T.accent, fontSize: 9, fontWeight: 600 }}>● V15 · Ambassadeur</div></div><button onClick={() => setCollapsed(true)} style={{ marginLeft: "auto", background: "none", border: "none", color: T.dim, cursor: "pointer" }}>⇤</button></>)}
           {collapsed && <button onClick={() => setCollapsed(false)} style={{ background: "none", border: "none", color: T.dim, cursor: "pointer" }}>⇥</button>}
         </div>
         <nav style={{ flex: 1, padding: "7px 5px" }}>
@@ -1513,7 +1721,7 @@ export default function NeoERPV14() {
           <span style={{ color: T.sub, fontSize: 11, flex: 1 }}>{NAV.find(n => n.id === view)?.label}</span>
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <div style={{ width: 5, height: 5, borderRadius: "50%", background: T.accent, boxShadow: `0 0 5px ${T.accent}` }} />
-            <span style={{ color: T.sub, fontSize: 10 }}>V14 · PDF · IA Pro</span>
+            <span style={{ color: T.sub, fontSize: 10 }}>V15 · Ambassadeur</span>
             <span style={{ background: trialStatus.color + "20", color: trialStatus.color, border: `1px solid ${trialStatus.color}40`, borderRadius: 10, padding: "2px 8px", fontSize: 9, fontWeight: 700, marginLeft: 6 }}>{trialStatus.label}</span>
           </div>
         </div>
