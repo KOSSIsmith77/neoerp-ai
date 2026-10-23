@@ -21,7 +21,7 @@ const PLANS = [
   { id: "pro", name: "Pro", price: 35000, priceUSD: 58, desc: "Pour les entreprises avancées", features: ["Utilisateurs illimités", "Multi-entreprises", "IA décisionnelle", "OCR documents", "API access", "Support dédié"], color: "#FFD060", cta: "Choisir Pro", trial: false },
 ];
 
-const T = {
+const DARK_THEME = {
   bg: "#070A0F", s1: "#0D1117", s2: "#111820", s3: "#161E2B",
   border: "#1C2535", borderLight: "#243040",
   accent: "#00E5B0", accentDim: "#00E5B012", accentBorder: "#00E5B025",
@@ -31,6 +31,39 @@ const T = {
   violet: "#A78BFA", violetDim: "#A78BFA12",
   text: "#E2EAF4", sub: "#8898AA", dim: "#364558",
 };
+
+const LIGHT_THEME = {
+  bg: "#F8FAFF", s1: "#FFFFFF", s2: "#F0F4FF", s3: "#E8EEFF",
+  border: "#D0D8F0", borderLight: "#C0CCE8",
+  accent: "#00A87A", accentDim: "#00A87A12", accentBorder: "#00A87A30",
+  gold: "#D4900A", goldDim: "#D4900A12",
+  red: "#E0304A", redDim: "#E0304A12",
+  blue: "#2060CC", blueDim: "#2060CC12",
+  violet: "#7C5CBF", violetDim: "#7C5CBF12",
+  text: "#1A1A2E", sub: "#5A6888", dim: "#A0AACC",
+};
+
+let T = { ...DARK_THEME };
+let _themeListeners = [];
+let _isDark = true;
+
+function getTheme() { return _isDark; }
+function setTheme(dark) {
+  _isDark = dark;
+  Object.assign(T, dark ? DARK_THEME : LIGHT_THEME);
+  try { localStorage.setItem("neoerp_theme", dark ? "dark" : "light"); } catch(e) {}
+  _themeListeners.forEach(fn => fn(dark));
+}
+function onThemeChange(fn) { _themeListeners.push(fn); return () => { _themeListeners = _themeListeners.filter(f => f !== fn); }; }
+
+// Load saved theme
+try { const saved = localStorage.getItem("neoerp_theme"); if (saved === "light") setTheme(false); } catch(e) {}
+
+function useTheme() {
+  const [dark, setDark] = useState(getTheme());
+  useEffect(() => { return onThemeChange(d => setDark(d)); }, []);
+  return [dark, (v) => setTheme(v)];
+}
 
 const fmtShort = (n) => { n = Number(n || 0); if (n >= 1e6) return (n / 1e6).toFixed(1) + "M"; if (n >= 1e3) return (n / 1e3).toFixed(0) + "K"; return String(n); };
 
@@ -1036,14 +1069,14 @@ function LandingPage({ onGetStarted }) {
 
 /* ─── AUTH SCREEN ─── */
 function AuthScreen({ onAuth, defaultMode = "login" }) {
-  const [mode, setMode] = useState(defaultMode); const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [company, setCompany] = useState(""); const [loading, setLoading] = useState(false); const [error, setError] = useState("");
+  const [mode, setMode] = useState(defaultMode); const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [company, setCompany] = useState(""); const [parrain, setParrain] = useState(""); const [loading, setLoading] = useState(false); const [error, setError] = useState("");
   const submit = async () => {
     if (!email || !password) return setError("Email et mot de passe obligatoires");
     if (password.length < 6) return setError("Mot de passe minimum 6 caractères");
     setLoading(true); setError("");
     try {
       if (mode === "register") { await auth.signUp(email, password); setMode("login"); setError("✓ Compte créé. Connectez-vous."); }
-      else { const r = await auth.signIn(email, password); const co = company || "Mon Entreprise"; auth.saveSession(r, co, "starter"); onAuth(r.access_token, r.refresh_token, r.user, co, "starter"); }
+      else { const r = await auth.signIn(email, password); const co = company || "Mon Entreprise"; auth.saveSession(r, co, "starter"); onAuth(r.access_token, r.refresh_token, r.user, co, "starter", parrain); }
     } catch (e) { setError(e.message); }
     setLoading(false);
   };
@@ -1061,6 +1094,7 @@ function AuthScreen({ onAuth, defaultMode = "login" }) {
             {mode === "register" && <input value={company} onChange={e => setCompany(e.target.value)} placeholder="Nom de votre entreprise" style={{ background: T.s3, border: `1px solid ${T.border}`, borderRadius: 8, padding: "10px 13px", color: T.text, fontSize: 13, outline: "none" }} />}
             <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" type="email" style={{ background: T.s3, border: `1px solid ${T.border}`, borderRadius: 8, padding: "10px 13px", color: T.text, fontSize: 13, outline: "none" }} />
             <input value={password} onChange={e => setPassword(e.target.value)} placeholder="Mot de passe" type="password" onKeyDown={e => e.key === "Enter" && submit()} style={{ background: T.s3, border: `1px solid ${T.border}`, borderRadius: 8, padding: "10px 13px", color: T.text, fontSize: 13, outline: "none" }} />
+            {mode === "register" && <input value={parrain} onChange={e => setParrain(e.target.value.toUpperCase())} placeholder="Code parrain (optionnel)" style={{ background: T.s3, border: `1px solid ${T.border}`, borderRadius: 8, padding: "10px 13px", color: T.accent, fontSize: 13, outline: "none", letterSpacing: "0.1em" }} />}
           </div>
           {error && <div style={{ marginTop: 9, padding: "8px 11px", borderRadius: 7, background: error.startsWith("✓") ? T.accentDim : T.redDim, color: error.startsWith("✓") ? T.accent : T.red, fontSize: 12 }}>{error}</div>}
           <button onClick={submit} disabled={loading} style={{ width: "100%", marginTop: 13, background: loading ? T.s3 : T.accent, border: "none", borderRadius: 8, padding: "12px", color: loading ? T.sub : T.bg, fontWeight: 800, fontSize: 14, cursor: loading ? "default" : "pointer" }}>{loading ? "Chargement…" : mode === "login" ? "Se connecter" : "Créer mon compte"}</button>
@@ -1555,6 +1589,292 @@ function AmbassadeurModule({ token, userId, toast, session }) {
   );
 }
 
+/* ─── MODULE RH ─── */
+function RHModule({ token, userId, toast, refreshKey }) {
+  const [employes, setEmployes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ nom: "", poste: "", salaire: "", date_embauche: "", statut: "actif" });
+
+  const load = async () => {
+    setLoading(true);
+    try { const d = await db.query("employes", { select: "*", order: "created_at.desc" }, token); setEmployes(Array.isArray(d) ? d : []); }
+    catch (e) { toast(e.message, "error"); }
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, [refreshKey]);
+
+  const save = async () => {
+    if (!form.nom.trim()) return toast("Nom requis", "error");
+    try {
+      await db.insert("employes", { nom: form.nom.trim(), poste: form.poste || "", salaire: Math.round(Number(form.salaire) || 0), date_embauche: form.date_embauche || null, statut: form.statut, user_id: userId }, token);
+      toast("Employé ajouté ✓", "success"); setShowForm(false); setForm({ nom: "", poste: "", salaire: "", date_embauche: "", statut: "actif" }); load();
+    } catch (e) { toast(e.message, "error"); }
+  };
+
+  const totalSalaires = employes.reduce((s, e) => s + (e.salaire || 0), 0);
+  const actifs = employes.filter(e => e.statut === "actif").length;
+
+  return (
+    <div style={{ padding: 18, height: "100%", overflowY: "auto" }}>
+      <div style={{ color: T.sub, fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", marginBottom: 4 }}>👥 RESSOURCES HUMAINES</div>
+      <div style={{ color: T.text, fontSize: 17, fontWeight: 800, marginBottom: 16 }}>Gestion des employés</div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 16 }}>
+        {[
+          { label: "Total employés", val: employes.length, color: T.blue },
+          { label: "Actifs", val: actifs, color: T.accent },
+          { label: "Masse salariale", val: fmtShort(totalSalaires) + " F", color: T.gold },
+        ].map((k, i) => (
+          <div key={i} style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 10, padding: "12px 11px" }}>
+            <div style={{ color: T.sub, fontSize: 10 }}>{k.label}</div>
+            <div style={{ color: k.color, fontSize: 16, fontWeight: 800 }}>{k.val}</div>
+          </div>
+        ))}
+      </div>
+
+      <button onClick={() => setShowForm(!showForm)} style={{ background: T.accent, border: "none", borderRadius: 8, padding: "8px 16px", color: T.bg, fontWeight: 700, fontSize: 12, cursor: "pointer", marginBottom: 14 }}>+ Ajouter un employé</button>
+
+      {showForm && (
+        <div style={{ background: T.s2, border: `1px solid ${T.accentBorder}`, borderRadius: 11, padding: 14, marginBottom: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+            {[
+              { k: "nom", p: "Nom complet *" },
+              { k: "poste", p: "Poste / Fonction" },
+              { k: "salaire", p: "Salaire mensuel (FCFA)", type: "number" },
+              { k: "date_embauche", p: "Date d'embauche", type: "date" },
+            ].map(f => (
+              <input key={f.k} value={form[f.k]} onChange={e => setForm(p => ({ ...p, [f.k]: e.target.value }))} placeholder={f.p} type={f.type || "text"} style={{ background: T.s3, border: `1px solid ${T.border}`, borderRadius: 7, padding: "8px 11px", color: T.text, fontSize: 12, outline: "none" }} />
+            ))}
+          </div>
+          <select value={form.statut} onChange={e => setForm(p => ({ ...p, statut: e.target.value }))} style={{ background: T.s3, border: `1px solid ${T.border}`, borderRadius: 7, padding: "8px 11px", color: T.text, fontSize: 12, outline: "none", marginBottom: 10, width: "100%" }}>
+            <option value="actif">Actif</option>
+            <option value="inactif">Inactif</option>
+            <option value="congé">En congé</option>
+          </select>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={save} style={{ background: T.accent, border: "none", borderRadius: 7, padding: "8px 16px", color: T.bg, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Enregistrer</button>
+            <button onClick={() => setShowForm(false)} style={{ background: T.s3, border: `1px solid ${T.border}`, borderRadius: 7, padding: "8px 12px", color: T.sub, fontSize: 12, cursor: "pointer" }}>Annuler</button>
+          </div>
+        </div>
+      )}
+
+      {loading ? <div style={{ textAlign: "center", padding: 40, color: T.sub }}>Chargement…</div>
+        : employes.length === 0 ? <div style={{ textAlign: "center", padding: 40, color: T.sub }}>Aucun employé enregistré.</div>
+          : (
+            <div style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 11, overflow: "hidden" }}>
+              {employes.map((e, i) => (
+                <div key={e.id} style={{ padding: "11px 14px", borderBottom: i < employes.length - 1 ? `1px solid ${T.border}` : "none", display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 9, background: `linear-gradient(135deg, ${T.violet}, #6040AA)`, display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: 800, fontSize: 14, flexShrink: 0 }}>{e.nom[0]?.toUpperCase()}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ color: T.text, fontWeight: 600, fontSize: 13 }}>{e.nom}</div>
+                    <div style={{ color: T.sub, fontSize: 10 }}>{e.poste || "—"}</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ color: T.accent, fontWeight: 700, fontSize: 13 }}>{fmtShort(e.salaire)} F</div>
+                    <div style={{ background: e.statut === "actif" ? T.accentDim : T.goldDim, color: e.statut === "actif" ? T.accent : T.gold, borderRadius: 10, padding: "1px 7px", fontSize: 9, fontWeight: 700, marginTop: 3 }}>{e.statut}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+    </div>
+  );
+}
+
+/* ─── IMPORT EXCEL ─── */
+function ImportExcelModule({ token, userId, toast }) {
+  const [importing, setImporting] = useState(false);
+  const [preview, setPreview] = useState([]);
+  const [type, setType] = useState("clients");
+  const [done, setDone] = useState(false);
+
+  const handleFile = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setImporting(true); setDone(false);
+    try {
+      const XLSX = await import("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/xlsx.mjs");
+      const data = await file.arrayBuffer();
+      const wb = XLSX.read(data);
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+      setPreview(rows.slice(0, 5));
+    } catch (e) { toast("Erreur lecture fichier: " + e.message, "error"); }
+    setImporting(false);
+  };
+
+  const importData = async () => {
+    if (preview.length === 0) return;
+    setImporting(true);
+    try {
+      const XLSX = await import("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/xlsx.mjs");
+      const input = document.getElementById("excel-input");
+      const data = await input.files[0].arrayBuffer();
+      const wb = XLSX.read(data);
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+      let count = 0;
+      for (const row of rows) {
+        try {
+          if (type === "clients") {
+            await db.insert("clients", { nom: row.nom || row.Nom || row.NAME || "Client importé", email: row.email || row.Email || null, telephone: row.telephone || row.Tel || null, statut: "actif", user_id: userId }, token);
+          } else if (type === "factures") {
+            const ht = Math.round(Number(row.montant_ht || row.HT || 0));
+            const tva = Math.round(ht * 0.18);
+            const ttc = ht + tva;
+            await db.insert("factures", { reference: genRef(), client_nom: row.client || row.Client || "Client", montant_ht: ht, tva_rate: 18, tva_montant: tva, montant_ttc: ttc, statut: row.statut || "impayée", user_id: userId }, token);
+          }
+          count++;
+        } catch (e) {}
+      }
+      toast(`${count} ${type} importés ✓`, "success");
+      setPreview([]); setDone(true);
+    } catch (e) { toast("Erreur import: " + e.message, "error"); }
+    setImporting(false);
+  };
+
+  return (
+    <div style={{ padding: 18, height: "100%", overflowY: "auto" }}>
+      <div style={{ color: T.sub, fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", marginBottom: 4 }}>📥 IMPORT</div>
+      <div style={{ color: T.text, fontSize: 17, fontWeight: 800, marginBottom: 4 }}>Import Excel / CSV</div>
+      <div style={{ color: T.sub, fontSize: 12, marginBottom: 20 }}>Importez vos données existantes depuis Excel ou CSV</div>
+
+      <div style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 12, padding: 18, marginBottom: 16 }}>
+        <div style={{ color: T.sub, fontSize: 11, fontWeight: 700, marginBottom: 10 }}>TYPE DE DONNÉES</div>
+        <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+          {["clients", "factures"].map(t => (
+            <button key={t} onClick={() => setType(t)} style={{ background: type === t ? T.accentDim : T.s3, border: `1px solid ${type === t ? T.accent : T.border}`, borderRadius: 8, padding: "8px 16px", color: type === t ? T.accent : T.sub, fontSize: 12, cursor: "pointer", fontWeight: 700, textTransform: "capitalize" }}>{t}</button>
+          ))}
+        </div>
+
+        <div style={{ background: T.accentDim, border: `2px dashed ${T.accentBorder}`, borderRadius: 10, padding: 24, textAlign: "center", marginBottom: 14 }}>
+          <div style={{ fontSize: 28, marginBottom: 8 }}>📊</div>
+          <div style={{ color: T.text, fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Glissez votre fichier Excel ou CSV</div>
+          <div style={{ color: T.sub, fontSize: 11, marginBottom: 14 }}>Colonnes attendues pour {type} : {type === "clients" ? "nom, email, telephone" : "client, montant_ht, statut"}</div>
+          <input id="excel-input" type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} style={{ display: "none" }} />
+          <button onClick={() => document.getElementById("excel-input").click()} style={{ background: T.accent, border: "none", borderRadius: 8, padding: "9px 20px", color: T.bg, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Choisir un fichier</button>
+        </div>
+
+        {preview.length > 0 && (
+          <>
+            <div style={{ color: T.sub, fontSize: 10, fontWeight: 700, marginBottom: 8 }}>APERÇU ({preview.length} premières lignes)</div>
+            <div style={{ background: T.s3, border: `1px solid ${T.border}`, borderRadius: 8, padding: 10, marginBottom: 14, overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                <thead>
+                  <tr>{Object.keys(preview[0]).map(k => <th key={k} style={{ padding: "4px 8px", color: T.sub, textAlign: "left", borderBottom: `1px solid ${T.border}` }}>{k}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {preview.map((row, i) => <tr key={i}>{Object.values(row).map((v, j) => <td key={j} style={{ padding: "4px 8px", color: T.text, borderBottom: `1px solid ${T.border}` }}>{String(v).slice(0, 20)}</td>)}</tr>)}
+                </tbody>
+              </table>
+            </div>
+            <button onClick={importData} disabled={importing} style={{ width: "100%", background: importing ? T.s3 : T.accent, border: "none", borderRadius: 9, padding: "11px", color: importing ? T.sub : T.bg, fontWeight: 800, fontSize: 14, cursor: importing ? "default" : "pointer" }}>
+              {importing ? "Import en cours…" : `Importer tous les ${type}`}
+            </button>
+          </>
+        )}
+        {done && <div style={{ textAlign: "center", padding: 20, color: T.accent, fontSize: 14, fontWeight: 700 }}>✓ Import terminé avec succès !</div>}
+      </div>
+
+      <div style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 12, padding: 16 }}>
+        <div style={{ color: T.sub, fontSize: 10, fontWeight: 700, marginBottom: 10 }}>MODÈLES À TÉLÉCHARGER</div>
+        {[
+          { label: "Modèle Clients", cols: "nom,email,telephone,ville", file: "modele_clients.csv" },
+          { label: "Modèle Factures", cols: "client,montant_ht,statut,description", file: "modele_factures.csv" },
+        ].map((m, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i === 0 ? `1px solid ${T.border}` : "none" }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ color: T.text, fontSize: 12, fontWeight: 600 }}>{m.label}</div>
+              <div style={{ color: T.dim, fontSize: 10 }}>Colonnes : {m.cols}</div>
+            </div>
+            <button onClick={() => {
+              const blob = new Blob([m.cols + "\n"], { type: "text/csv" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a"); a.href = url; a.download = m.file; a.click();
+              URL.revokeObjectURL(url);
+            }} style={{ background: T.s3, border: `1px solid ${T.border}`, borderRadius: 7, padding: "5px 12px", color: T.sub, fontSize: 10, cursor: "pointer", fontWeight: 600 }}>⬇ Télécharger</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── CABINET DASHBOARD ─── */
+function CabinetModule({ token, userId, toast }) {
+  const [clients, setClients] = useState([]);
+  const [factures, setFactures] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(null);
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const [c, f] = await Promise.all([
+          db.query("clients", { select: "*", order: "created_at.desc" }, token),
+          db.query("factures", { select: "*", order: "created_at.desc" }, token),
+        ]);
+        setClients(Array.isArray(c) ? c : []);
+        setFactures(Array.isArray(f) ? f : []);
+      } catch (e) { toast(e.message, "error"); }
+      setLoading(false);
+    };
+    load();
+  }, []);
+
+  const getClientStats = (clientNom) => {
+    const cf = factures.filter(f => f.client_nom === clientNom);
+    const impaye = cf.filter(f => f.statut !== "payée").reduce((s, f) => s + (f.montant_ttc || 0), 0);
+    const ca = cf.reduce((s, f) => s + (f.montant_ttc || 0), 0);
+    return { total: cf.length, impaye, ca };
+  };
+
+  return (
+    <div style={{ padding: 18, height: "100%", overflowY: "auto" }}>
+      <div style={{ color: T.sub, fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", marginBottom: 4 }}>🏢 CABINET</div>
+      <div style={{ color: T.text, fontSize: 17, fontWeight: 800, marginBottom: 4 }}>Tableau de bord Cabinet</div>
+      <div style={{ color: T.sub, fontSize: 12, marginBottom: 16 }}>Vue comptable de toutes les PME clientes</div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 16 }}>
+        {[
+          { label: "PME clientes", val: clients.length, color: T.blue },
+          { label: "Total factures", val: factures.length, color: T.accent },
+          { label: "Impayés global", val: fmtShort(factures.filter(f => f.statut !== "payée").reduce((s, f) => s + (f.montant_ttc || 0), 0)) + " F", color: T.gold },
+        ].map((k, i) => (
+          <div key={i} style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 10, padding: "12px 11px" }}>
+            <div style={{ color: T.sub, fontSize: 10 }}>{k.label}</div>
+            <div style={{ color: k.color, fontSize: 15, fontWeight: 800 }}>{k.val}</div>
+          </div>
+        ))}
+      </div>
+
+      {loading ? <div style={{ textAlign: "center", padding: 40, color: T.sub }}>Chargement…</div> : (
+        <div style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ padding: "10px 14px", background: T.s3, borderBottom: `1px solid ${T.border}`, display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 10 }}>
+            {["PME Cliente", "Factures", "CA Total", "Impayés"].map((h, i) => <div key={i} style={{ color: T.sub, fontSize: 10, fontWeight: 700 }}>{h}</div>)}
+          </div>
+          {clients.length === 0 ? <div style={{ textAlign: "center", padding: 40, color: T.sub }}>Aucun client.</div> : clients.map((c, i) => {
+            const stats = getClientStats(c.nom);
+            return (
+              <div key={c.id} onClick={() => setSelected(selected === c.id ? null : c.id)} style={{ padding: "12px 14px", borderBottom: i < clients.length - 1 ? `1px solid ${T.border}` : "none", display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 10, cursor: "pointer", background: selected === c.id ? T.accentDim : "none" }}>
+                <div>
+                  <div style={{ color: T.text, fontSize: 12, fontWeight: 600 }}>{c.nom}</div>
+                  <div style={{ color: T.sub, fontSize: 10 }}>{c.email || c.telephone || "—"}</div>
+                </div>
+                <div style={{ color: T.text, fontSize: 12 }}>{stats.total}</div>
+                <div style={{ color: T.accent, fontSize: 12, fontWeight: 700 }}>{fmtShort(stats.ca)} F</div>
+                <div style={{ color: stats.impaye > 0 ? T.gold : T.accent, fontSize: 12, fontWeight: 700 }}>{fmtShort(stats.impaye)} F</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── NAV ─── */
 const NAV = [
   { id: "dashboard", icon: "⬡", label: "Tableau de bord" },
@@ -1564,12 +1884,15 @@ const NAV = [
   { id: "tresorerie", icon: "◈", label: "Trésorerie" },
   { id: "reminders", icon: "⚡", label: "Relances" },
   { id: "comptabilite", icon: "📚", label: "Comptabilité" },
+  { id: "rh", icon: "👥", label: "Ressources Humaines" },
+  { id: "import", icon: "📥", label: "Import Excel" },
+  { id: "cabinet", icon: "🏢", label: "Tableau Cabinet" },
   { id: "ambassadeur", icon: "★", label: "Ambassadeur" },
   { id: "settings", icon: "⚙", label: "Paramètres" },
 ];
 
 /* ─── ROOT ─── */
-export default function NeoERPV15() {
+export default function NeoERPV16() {
   const [screen, setScreen] = useState("landing");
   const [authMode, setAuthMode] = useState("login");
   const [session, setSession] = useState(null);
@@ -1578,6 +1901,7 @@ export default function NeoERPV15() {
   const [collapsed, setCollapsed] = useState(false);
   const [toast, setToast] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [isDark, toggleTheme] = useTheme();
   const [factures, setFactures] = useState([]);
   const [companySettings, setCompanySettings] = useState(null);
 
@@ -1640,10 +1964,10 @@ export default function NeoERPV15() {
   const showToast = (msg, type = "success") => setToast({ msg, type });
   const refresh = () => setRefreshKey(k => k + 1);
   const handleGetStarted = (mode) => { setAuthMode(mode); setScreen("auth"); };
-  const handleAuth = (token, refresh_token, user, company, plan) => { 
+  const handleAuth = (token, refresh_token, user, company, plan, parrainCode) => { 
     const existing = auth.loadSession();
     const trial_start = existing?.trial_start || Date.now();
-    const s = { token, refresh_token, user, company, plan: plan || "starter", trial_start, expires_at: Date.now() + 3600000 }; 
+    const s = { token, refresh_token, user, company, plan: plan || "starter", trial_start, parrain: parrainCode || null, expires_at: Date.now() + 3600000 }; 
     setSession(s); setScreen("app"); 
   };
   const handleLogout = async () => { try { await auth.signOut(session.token); } catch (e) {} auth.clearSession(); setSession(null); setScreen("landing"); };
@@ -1666,6 +1990,9 @@ export default function NeoERPV15() {
       case "upgrade": return <UpgradeModule email={session.user?.email} company={session.company} />;
       case "comptabilite": return <ComptabiliteModule token={session.token} userId={session.user?.id} toast={showToast} company={companySettings} />;
       case "ambassadeur": return <AmbassadeurModule token={session.token} userId={session.user?.id} toast={showToast} session={session} />;
+      case "rh": return <RHModule token={session.token} userId={session.user?.id} toast={showToast} refreshKey={refreshKey} />;
+      case "import": return <ImportExcelModule token={session.token} userId={session.user?.id} toast={showToast} />;
+      case "cabinet": return <CabinetModule token={session.token} userId={session.user?.id} toast={showToast} />;
       case "settings": return <CompanySettingsModule token={session.token} userId={session.user?.id} toast={showToast} company={companySettings} onUpdate={setCompanySettings} />;
       default: return <Dashboard {...props} onNavigate={setView} plan={session.plan} company={session.company} />;
     }
@@ -1696,7 +2023,7 @@ export default function NeoERPV15() {
       <div style={{ width: collapsed ? 50 : 210, flexShrink: 0, background: T.s1, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column", transition: "width 0.22s", overflow: "hidden" }}>
         <div style={{ padding: "13px 11px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ width: 27, height: 27, borderRadius: 8, background: `linear-gradient(135deg, ${T.accent}, #009970)`, display: "flex", alignItems: "center", justifyContent: "center", color: T.bg, fontWeight: 900, fontSize: 12, flexShrink: 0 }}>N</div>
-          {!collapsed && (<><div><div style={{ color: T.text, fontWeight: 800, fontSize: 12 }}>NeoERP AI</div><div style={{ color: T.accent, fontSize: 9, fontWeight: 600 }}>● V15 · Ambassadeur</div></div><button onClick={() => setCollapsed(true)} style={{ marginLeft: "auto", background: "none", border: "none", color: T.dim, cursor: "pointer" }}>⇤</button></>)}
+          {!collapsed && (<><div><div style={{ color: T.text, fontWeight: 800, fontSize: 12 }}>NeoERP AI</div><div style={{ color: T.accent, fontSize: 9, fontWeight: 600 }}>● V16 · Complet</div></div><button onClick={() => setCollapsed(true)} style={{ marginLeft: "auto", background: "none", border: "none", color: T.dim, cursor: "pointer" }}>⇤</button></>)}
           {collapsed && <button onClick={() => setCollapsed(false)} style={{ background: "none", border: "none", color: T.dim, cursor: "pointer" }}>⇥</button>}
         </div>
         <nav style={{ flex: 1, padding: "7px 5px" }}>
@@ -1721,7 +2048,8 @@ export default function NeoERPV15() {
           <span style={{ color: T.sub, fontSize: 11, flex: 1 }}>{NAV.find(n => n.id === view)?.label}</span>
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <div style={{ width: 5, height: 5, borderRadius: "50%", background: T.accent, boxShadow: `0 0 5px ${T.accent}` }} />
-            <span style={{ color: T.sub, fontSize: 10 }}>V15 · Ambassadeur</span>
+            <span style={{ color: T.sub, fontSize: 10 }}>V16 · Complet</span>
+            <button onClick={() => toggleTheme(!isDark)} style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 20, padding: "3px 10px", color: T.sub, fontSize: 12, cursor: "pointer", marginLeft: 8 }}>{isDark ? "☀" : "🌙"}</button>
             <span style={{ background: trialStatus.color + "20", color: trialStatus.color, border: `1px solid ${trialStatus.color}40`, borderRadius: 10, padding: "2px 8px", fontSize: 9, fontWeight: 700, marginLeft: 6 }}>{trialStatus.label}</span>
           </div>
         </div>
